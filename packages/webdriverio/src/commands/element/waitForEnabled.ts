@@ -1,10 +1,17 @@
-import type { WaitForOptions } from '../../types'
+import type { WaitForOptions } from '../../types.js'
 
 /**
  *
  * Wait for an element (selected by css selector) for the provided amount of
  * milliseconds to be (dis/en)abled. If multiple elements get queried by given
  * selector, it returns true if at least one element is (dis/en)abled.
+ *
+ * :::info
+ *
+ * As opposed to other element commands WebdriverIO will not wait for the element
+ * to exist to execute this command.
+ *
+ * :::
  *
  * <example>
     :index.html
@@ -15,19 +22,19 @@ import type { WaitForOptions } from '../../types'
         }, 2000);
     </script>
     :waitForEnabledExample.js
-    it('should detect when element is enabled', () => {
-        $('#username').waitForEnabled({ timeout: 3000 });
+    it('should detect when element is enabled', async () => {
+        await $('#username').waitForEnabled({ timeout: 3000 });
     });
 
-    it('should detect when element is disabled', () => {
-        elem = $('#username');
-        elem.waitForEnabled({ reverse: true })
+    it('should detect when element is disabled', async () => {
+        elem = await $('#username');
+        await elem.waitForEnabled({ reverse: true })
     });
  * </example>
  *
  * @alias element.waitForEnabled
  * @param {WaitForOptions=}  options             waitForEnabled options (optional)
- * @param {Number=}          options.timeout     time in ms (default: 500)
+ * @param {Number=}          options.timeout     time in ms (default set based on [`waitforTimeout`](/docs/configuration#waitfortimeout) config value)
  * @param {Boolean=}         options.reverse     if true it waits for the opposite (default: false)
  * @param {String=}          options.timeoutMsg  if exists it overrides the default error message
  * @param {Number=}          options.interval    interval between checks (default: `waitforInterval`)
@@ -36,7 +43,7 @@ import type { WaitForOptions } from '../../types'
  * @type utility
  *
  */
-export default async function waitForEnabled(
+export async function waitForEnabled(
     this: WebdriverIO.Element,
     {
         timeout = this.options.waitforTimeout,

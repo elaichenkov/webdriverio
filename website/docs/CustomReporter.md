@@ -33,9 +33,9 @@ To use this reporter, all you need to do is assign it to the `reporter` property
 Your `wdio.conf.js` file should look like this:
 
 ```js
-const CustomReporter = require('./reporter/my.custom.reporter')
+import CustomReporter from './reporter/my.custom.reporter'
 
-exports.config = {
+export const config = {
     // ...
     reporters: [
         /**
@@ -43,7 +43,7 @@ exports.config = {
          */
         [CustomReporter, {
             someOption: 'foobar'
-        }]
+        }],
         /**
          * use absolute path to reporter
          */
@@ -101,7 +101,7 @@ export default class CustomReporter extends WDIOReporter {
 
 Note that you cannot defer the test execution in any way.
 
-All event handlers should execute synchronous routines (or you’ll run into race conditions).
+All event handlers should execute synchronous routines (or you'll run into race conditions).
 
 Be sure to check out the [example section](https://github.com/webdriverio/webdriverio/tree/main/examples/wdio) where you can find an example custom reporter that prints the event name for each event.
 
@@ -122,7 +122,7 @@ const launcher = new Launcher('/path/to/config.file.js', {
 
 ## Wait Until `isSynchronised`
 
-If your reporter has to execute async operations to report the data (e.g. upload of log files or other assets) you can overwrite the `isSynchronised` method in your custom reporter to let the WebdriverIO runner wait until you have computed everything. An example of this can be seen in the [`@wdio/sumologic-reporter`](https://github.com/webdriverio/webdriverio/blob/main/packages/wdio-sumologic-reporter/src/index.js):
+If your reporter has to execute async operations to report the data (e.g. upload of log files or other assets) you can overwrite the `isSynchronised` method in your custom reporter to let the WebdriverIO runner wait until you have computed everything. An example of this can be seen in the [`@wdio/sumologic-reporter`](https://github.com/webdriverio/webdriverio/blob/main/packages/wdio-sumologic-reporter/src/index.ts):
 
 ```js
 export default class SumoLogicReporter extends WDIOReporter {
@@ -162,3 +162,32 @@ export default class SumoLogicReporter extends WDIOReporter {
 ```
 
 This way the runner will wait until all log information are uploaded.
+
+## Publish Reporter on NPM
+
+To make reporter easier to consume and discover by the WebdriverIO community, please follow these recommendations:
+
+* Services should use this naming convention: `wdio-*-reporter`
+* Use NPM keywords: `wdio-plugin`, `wdio-reporter`
+* The `main` entry should `export` an instance of the reporter
+* Example reporter: [`@wdio/dot-service`](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-dot-reporter)
+
+Following the recommended naming pattern allows services to be added by name:
+
+```js
+// Add wdio-custom-reporter
+export const config = {
+    // ...
+    reporter: ['custom'],
+    // ...
+}
+```
+
+### Add Published Service to WDIO CLI and Docs
+
+We really appreciate every new plugin that could help other people run better tests! If you have created such a plugin, please consider adding it to our CLI and docs to make it easier to be found.
+
+Please raise a pull request with the following changes:
+
+- add your service to the list of [supported reporters](https://github.com/webdriverio/webdriverio/blob/main/packages/wdio-cli/src/constants.ts#L74-L91)) in the CLI module
+- enhance the [reporter list](https://github.com/webdriverio/webdriverio/blob/main/scripts/docs-generation/3rd-party/reporters.json) for adding your docs to the official Webdriver.io page

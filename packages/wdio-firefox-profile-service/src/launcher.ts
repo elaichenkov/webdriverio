@@ -1,14 +1,14 @@
 import Profile from 'firefox-profile'
-import { promisify } from 'util'
+import { promisify } from 'node:util'
 import type { Capabilities } from '@wdio/types'
 
-import { FirefoxProfileOptions } from './types'
+import type { FirefoxProfileOptions } from './types.js'
 
 export default class FirefoxProfileLauncher {
     private _profile?: Profile
     constructor(private _options: FirefoxProfileOptions) {}
 
-    async onPrepare(config: never, capabilities: Capabilities.RemoteCapabilities) {
+    async onPrepare(config: never, capabilities: Capabilities.TestrunnerCapabilities) {
         /**
          * Return if no profile options were specified
          */
@@ -16,11 +16,9 @@ export default class FirefoxProfileLauncher {
             return
         }
 
-        if (this._options.profileDirectory) {
-            this._profile = await promisify(Profile.copy)(this._options.profileDirectory)
-        } else {
-            this._profile = new Profile()
-        }
+        this._profile = this._options.profileDirectory
+            ? await promisify(Profile.copy)(this._options.profileDirectory)
+            : new Profile()
 
         if (!this._profile) {
             return
@@ -51,7 +49,7 @@ export default class FirefoxProfileLauncher {
                 continue
             }
 
-            this._profile.setPreference(preference, value)
+            this._profile.setPreference(preference, value as string)
         }
 
         if (this._options.proxy) {
@@ -61,7 +59,7 @@ export default class FirefoxProfileLauncher {
         this._profile.updatePreferences()
     }
 
-    async _buildExtension(capabilities: Capabilities.RemoteCapabilities) {
+    async _buildExtension(capabilities: Capabilities.TestrunnerCapabilities) {
         if (!this._profile) {
             return
         }
@@ -69,7 +67,13 @@ export default class FirefoxProfileLauncher {
         const zippedProfile = await promisify(this._profile.encoded.bind(this._profile))()
 
         if (Array.isArray(capabilities)) {
-            (capabilities as Capabilities.DesiredCapabilities[])
+            (capabilities as Capabilities.RequestedStandaloneCapabilities[] | Capabilities.RequestedMultiremoteCapabilities[])
+                .flatMap((c: Capabilities.RequestedStandaloneCapabilities | Capabilities.RequestedMultiremoteCapabilities) => {
+                    if (Object.values(c).length > 0 && Object.values(c).every(c => typeof c === 'object' && c.capabilities)) {
+                        return Object.values(c).map((o) => o.capabilities)
+                    }
+                    return c
+                })
                 .filter((capability) => capability.browserName === 'firefox')
                 .forEach((capability) => {
                     this._setProfile(capability, zippedProfile)
@@ -79,9 +83,9 @@ export default class FirefoxProfileLauncher {
         }
 
         for (const browser in capabilities) {
-            const capability = capabilities[browser].capabilities as Capabilities.DesiredCapabilities
-
-            if (!capability || capability.browserName !== 'firefox') {
+            const capability = capabilities[browser].capabilities as Capabilities.RequestedMultiremoteCapabilities[string]['capabilities']
+            const cap = capability && ('alwaysMatch' in capability ? capability.alwaysMatch : capability)
+            if (!capability || cap.browserName !== 'firefox') {
                 continue
             }
 
@@ -89,14 +93,10 @@ export default class FirefoxProfileLauncher {
         }
     }
 
-    _setProfile(capability: Capabilities.Capabilities, zippedProfile: string) {
-        if (this._options.legacy) {
-            // for older firefox and geckodriver versions
-            capability.firefox_profile = zippedProfile
-        } else {
-            // for firefox >= 56.0 and geckodriver >= 0.19.0
-            capability['moz:firefoxOptions'] = capability['moz:firefoxOptions'] || {}
-            capability['moz:firefoxOptions'].profile = zippedProfile
-        }
+    _setProfile(capability: Capabilities.RequestedStandaloneCapabilities, zippedProfile: string) {
+        const cap = 'alwaysMatch' in capability ? capability.alwaysMatch : capability
+
+        cap['moz:firefoxOptions'] = cap['moz:firefoxOptions'] || {}
+        cap['moz:firefoxOptions'].profile = zippedProfile
     }
 }

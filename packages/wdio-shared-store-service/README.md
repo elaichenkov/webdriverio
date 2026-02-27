@@ -5,19 +5,9 @@ WebdriverIO Shared Store Service
 
 ## Installation
 
-The easiest way is to keep `@wdio/shared-store-service` as a devDependency in your `package.json`.
+The easiest way is to keep `@wdio/shared-store-service` as a dev dependency in your `package.json`, via:
 
-```json
-{
-    "devDependencies": {
-        "@wdio/shared-store-service": "^6.1.4"
-    }
-}
-```
-
-You can simple do it by:
-
-```bash
+```sh
 npm install @wdio/shared-store-service --save-dev
 ```
 
@@ -25,25 +15,103 @@ Instructions on how to install `WebdriverIO` can be found [here.](https://webdri
 
 ## Usage
 
-Get/set a value (plain object) to/from the store by key (string).
+Get/set a value (a plain object) to/from the store by key (string). The key can be any arbitrary string except `*` which is reserved as it allows you to fetch the whole store.
 
-`browser.sharedStore.set('key', 'value')` set value to store
+### Set Values
 
-`browser.sharedStore.get('key')` get value from store (returns `'value'`)
+To set values to the store call:
 
-IMPORTANT! Every spec file should be atomic and isolated from others specs.
-The idea of the service is to deal with very specific environment setup issues.
-Please avoid sharing test execution data!
+```js
+await browser.sharedStore.set('key', 'foobar123')
+```
 
-## Configuration
+### Get Values
 
-Just add `shared-store` to services list and the `sharedStore` object will be accessible to you in your test.
+To get values from the store call:
+
+```js
+const value = await browser.sharedStore.get('key')
+console.log(value) // returns "foobar123"
+```
+
+You can also fetch all key values by using the `*` key:
+
+```js
+const store = await browser.sharedStore.get('*')
+console.log(value) // returns `{ key: "foobar" }`
+```
+
+### Access Store in WDIO Hooks
+
+You could also directly access to `setValue` and `getValue` async handlers.
+Make sure you properly call them with the `await` keyword.
 
 ```js
 // wdio.conf.js
-export.config = {
+import { setValue, getValue } from '@wdio/shared-store-service'
+
+export const config = {
+    // ...
+    onPrepare: [async function (config, capabilities) {
+        await setValue('foo', 'bar')
+    }],
+    // ...
+    after: async () => {
+        const value = await getValue('foo')
+        // ...
+    }
+```
+
+IMPORTANT! Every spec file should be atomic and isolated from others' specs.
+The idea of the service is to deal with very specific environment setup issues.
+Please avoid sharing test execution data!
+
+### Resource Pools
+
+If the worker threads are competing for resources that must be assigned for each worker, you can use Resource Pool API:
+
+```js
+// wdio.conf.js
+import { setResourcePool, getValueFromPool, addValueToPool } from '@wdio/shared-store-service'
+
+export const config = {
+    maxInstances: 2,
+    // ...
+    onPrepare: async function (config, capabilities) {
+        await setResourcePool('availableUrls', ['url01.com', 'url02.com'])
+    },
+    // ...
+    beforeSession: async (conf) => {
+        conf.baseUrl = await getValueFromPool('availableUrls');
+    },
+    // ...
+    afterSession: async (conf) => {
+        // worker returns the used resource for next workers to use
+        await addValueToPool('availableUrls', conf.baseUrl);
+    }
+```
+
+This example ensures that both workers never use the same `baseUrl`. A unique url is only assigned to one worker until it's released by it.
+
+## Configuration
+
+Add `shared-store` to the services list and the `sharedStore` object will be accessible to you on the [`browser` scope](https://webdriver.io/docs/api/browser) in your test.
+
+```js
+// wdio.conf.js
+export const config = {
     // ...
     services: ['shared-store'],
     // ...
 };
+```
+
+If you are using typescript, make sure to add `@wdio/shared-store-service` to your `compilerOptions.types`:
+
+```js
+{
+    "compilerOptions": {
+        "types": ["node", "@wdio/globals/types", "@wdio/shared-store-service"],
+    }
+}
 ```

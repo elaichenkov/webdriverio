@@ -58,10 +58,11 @@ export default function isElementDisplayed (element: Element): boolean {
             let node: ParentNode = targetNode;
             node && node !== (targetNode as Node).ownerDocument;
             node = (node as HTMLElement).parentNode as ParentNode
-        )
+        ) {
             if (predicate(node)) {
                 return node
             }
+        }
 
         return null
     }
@@ -71,10 +72,11 @@ export default function isElementDisplayed (element: Element): boolean {
             let element: HTMLElement | ParentNode = targetElement;
             element && element !== targetElement.ownerDocument;
             element = parentElementForElement(element as HTMLElement) as HTMLElement
-        )
+        ) {
             if (predicate(element)) {
                 return element
             }
+        }
 
         return null
     }
@@ -89,12 +91,12 @@ export default function isElementDisplayed (element: Element): boolean {
         // if document-fragment, skip it and use element.host instead. This happens
         // when the element is inside a shadow root.
         // window.getComputedStyle errors on document-fragment.
-        if (element instanceof DocumentFragment) {
+        if ('ShadowRoot' in window && element instanceof window.ShadowRoot) {
             element = element.host
         }
 
-        let computedStyle = window.getComputedStyle(element as Element)
-        let computedStyleProperty = computedStyle.getPropertyValue(property)
+        const computedStyle = window.getComputedStyle(element as Element)
+        const computedStyleProperty = computedStyle.getPropertyValue(property)
         if (computedStyleProperty && computedStyleProperty !== 'inherit') {
             return computedStyleProperty
         }
@@ -108,30 +110,35 @@ export default function isElementDisplayed (element: Element): boolean {
         // I think all important non-inheritable properties (width, height, etc.)
         // for our purposes here are specially resolved, so this may not be an issue.
         // Specification is here: https://drafts.csswg.org/cssom/#resolved-values
-        let parentElement = parentElementForElement(element as Element) as ParentNode
+        const parentElement = parentElementForElement(element as Element) as ParentNode
         return cascadedStylePropertyForElement(parentElement, property)
     }
 
+    function elementHasBoundingBox(element: Element): boolean {
+        const boundingBox = element.getBoundingClientRect()
+        return boundingBox.width > 0 && boundingBox.height > 0
+    }
+
     function elementSubtreeHasNonZeroDimensions(element: Element): boolean {
-        let boundingBox = element.getBoundingClientRect()
-        if (boundingBox.width > 0 && boundingBox.height > 0) {
+        if (elementHasBoundingBox(element)) {
             return true
         }
 
         // Paths can have a zero width or height. Treat them as shown if the stroke width is positive.
+        const boundingBox = element.getBoundingClientRect()
         if (element.tagName.toUpperCase() === 'PATH' && boundingBox.width + boundingBox.height > 0) {
-            let strokeWidth = cascadedStylePropertyForElement(element, 'stroke-width')
+            const strokeWidth = cascadedStylePropertyForElement(element, 'stroke-width')
             return !!strokeWidth && (parseInt(strokeWidth, 10) > 0)
         }
 
-        let cascadedOverflow = cascadedStylePropertyForElement(element, 'overflow')
+        const cascadedOverflow = cascadedStylePropertyForElement(element, 'overflow')
         if (cascadedOverflow === 'hidden') {
             return false
         }
 
         // If the container's overflow is not hidden and it has zero size, consider the
         // container to have non-zero dimensions if a child node has non-zero dimensions.
-        return Array.from(element.childNodes).some((childNode: Element) => {
+        return [].some.call(element.childNodes, function (childNode: Element) {
             if (childNode.nodeType === Node.TEXT_NODE) {
                 return true
             }
@@ -145,7 +152,7 @@ export default function isElementDisplayed (element: Element): boolean {
     }
 
     function elementOverflowsContainer(element: Element) {
-        let cascadedOverflow = cascadedStylePropertyForElement(element, 'overflow')
+        const cascadedOverflow = cascadedStylePropertyForElement(element, 'overflow')
         if (cascadedOverflow !== 'hidden') {
             return false
         }
@@ -170,7 +177,7 @@ export default function isElementDisplayed (element: Element): boolean {
         }
 
         // This element's subtree is hidden by overflow if all child subtrees are as well.
-        return Array.from(element.childNodes).every((childNode: Element) => {
+        return [].every.call(element.childNodes, function (childNode: Element) {
             // Returns true if the child node is overflowed or otherwise hidden.
             // Base case: not an element, has zero size, scrolled out, or doesn't overflow container.
             // Visibility of text nodes is controlled by parent
@@ -203,7 +210,14 @@ export default function isElementDisplayed (element: Element): boolean {
     // This is a partial reimplementation of Selenium's "element is displayed" algorithm.
     // When the W3C specification's algorithm stabilizes, we should implement that.
     // If this command is misdirected to the wrong document (and is NOT inside a shadow root), treat it as not shown.
-    if (!isElementInsideShadowRoot(element) && !document.contains(element)) {
+    if (
+        !isElementInsideShadowRoot(element) &&
+        (
+            typeof document.contains === 'function'
+                ? !document.contains(element)
+                : !document.body.contains(element) // IE doesn't support document.contains, therefor check before using
+        )
+    ) {
         return false
     }
 
@@ -219,7 +233,9 @@ export default function isElementDisplayed (element: Element): boolean {
     case 'OPTGROUP':
     case 'OPTION': {
         // Option/optgroup are considered shown if the containing <select> is shown.
-        let enclosingSelectElement = enclosingNodeOrSelfMatchingPredicate(element, (e: Element) => e.tagName.toUpperCase() === 'SELECT')
+        const enclosingSelectElement = enclosingNodeOrSelfMatchingPredicate(element, function (e: Element) {
+            return e.tagName.toUpperCase() === 'SELECT'
+        })
         return isElementDisplayed(enclosingSelectElement as Element)
     }
     case 'INPUT':
@@ -228,9 +244,9 @@ export default function isElementDisplayed (element: Element): boolean {
             return false
         }
         break
-        // case 'MAP':
+    case 'MAP':
         // FIXME: Selenium has special handling for <map> elements. We don't do anything now.
-
+        break
     default:
         break
     }
@@ -239,10 +255,10 @@ export default function isElementDisplayed (element: Element): boolean {
         return false
     }
 
-    let hasAncestorWithZeroOpacity = !!enclosingElementOrSelfMatchingPredicate(element as HTMLElement, (e: Element) => {
+    const hasAncestorWithZeroOpacity = !!enclosingElementOrSelfMatchingPredicate(element as HTMLElement, function (e: Element) {
         return Number(cascadedStylePropertyForElement(e, 'opacity')) === 0
     })
-    let hasAncestorWithDisplayNone = !!enclosingElementOrSelfMatchingPredicate(element as HTMLElement, (e: Element) => {
+    const hasAncestorWithDisplayNone = !!enclosingElementOrSelfMatchingPredicate(element as HTMLElement, function (e: Element) {
         return cascadedStylePropertyForElement(e, 'display') === 'none'
     })
     if (hasAncestorWithZeroOpacity || hasAncestorWithDisplayNone) {
@@ -253,7 +269,7 @@ export default function isElementDisplayed (element: Element): boolean {
         return false
     }
 
-    if (isElementSubtreeHiddenByOverflow(element)) {
+    if (isElementSubtreeHiddenByOverflow(element) && !elementHasBoundingBox(element)) {
         return false
     }
 

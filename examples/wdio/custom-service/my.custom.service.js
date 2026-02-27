@@ -1,9 +1,4 @@
-/**
- * you can also use
- * `export default class CustomService`
- * here
- */
-module.exports = class CustomService {
+export default class CustomService {
     constructor (config) {
         console.log('custom service options:', config.someOption)
     }
@@ -13,8 +8,11 @@ module.exports = class CustomService {
     onWorkerStart () {
         console.log('execute onWorkerStart(cid, caps, specs, args, execArgv)')
     }
+    onWorkerEnd () {
+        console.log('execute onWorkerEnd(cid, exitCode, specs, retries)')
+    }
     beforeSession () {
-        console.log('execute beforeSession(config, capabilities, specs)')
+        console.log('execute beforeSession(config, capabilities, specs, cid)')
     }
     before () {
         console.log('execute before(capabilities, specs)')
@@ -23,10 +21,10 @@ module.exports = class CustomService {
         console.log('execute beforeSuite(suite)')
     }
     beforeHook () {
-        console.log('execute beforeHook(test, context)')
+        console.log('execute beforeHook(test, context, hookName)')
     }
     afterHook () {
-        console.log('execute afterHook(test, context, { error, result, duration, passed, retries })')
+        console.log('execute afterHook(test, context, { error, result, duration, passed, retries }, hookName)')
     }
     beforeTest () {
         console.log('execute beforeTest(test, context)')

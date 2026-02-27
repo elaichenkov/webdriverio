@@ -1,13 +1,15 @@
 {
-  "lerna": "3.4.3",
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
   "packages": [
     "packages/*"
   ],
-  "version": "7.5.2",
+  "npmClient": "pnpm",
+  "version": "9.24.0",
   "command": {
     "bootstrap": {
       "npmClientArgs": [
-        "--no-package-lock"
+        "--no-package-lock",
+        "--include=dev"
       ]
     }
   },

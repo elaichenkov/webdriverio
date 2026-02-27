@@ -6,22 +6,22 @@
  *
  * <example>
     :pause.js
-    it('should pause the execution', () => {
+    it('should pause the execution', async () => {
         const starttime = new Date().getTime()
-        browser.pause(3000)
+        await browser.pause(3000)
         const endtime = new Date().getTime()
         console.log(endtime - starttime) // outputs: 3000
     });
  * </example>
  *
  * @alias browser.pause
- * @param {Number} milliseconds time in ms
+ * @param {number} milliseconds time in ms
  * @type utility
  *
  */
-export default function pause (
+export function pause (
     this: WebdriverIO.Browser,
     milliseconds = 1000
-) {
+): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }

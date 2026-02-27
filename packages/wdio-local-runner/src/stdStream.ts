@@ -1,5 +1,6 @@
-import { Transform, TransformCallback } from 'stream'
-import { removeLastListener } from './utils'
+import type { TransformCallback } from 'node:stream'
+import { Transform } from 'node:stream'
+import { removeLastListener } from './utils.js'
 
 export default class RunnerStream extends Transform {
     constructor () {
@@ -17,7 +18,7 @@ export default class RunnerStream extends Transform {
         })
     }
 
-    _transform (chunk: any, encoding: BufferEncoding, callback: TransformCallback): void {
+    _transform (chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback): void {
         callback(undefined, chunk)
     }
 

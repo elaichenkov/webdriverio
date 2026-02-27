@@ -2,6 +2,11 @@
 @import url(docsearch.css);
 @import url(hero.css);
 @import url(buttons.css);
+@import url(codeblock.css);
+@import url(youtube.css);
+@import url(flowcharts.css);
+@import url(sponsors.css);
+@import url(events.css);
 
 :root {
     --ifm-color-primary: #ea5906;
@@ -25,12 +30,14 @@
     --ifm-table-border-color: #efefef;
     --ifm-navbar-height: 85px;
     --ifm-button-border-width: 0;
+    --ifm-tabs-padding-vertical: 0.5rem;
+    --docusaurus-announcement-bar-height: auto!important;
 
     --wdio-spacing-vertical: 60px;
     --wdio-link-background-color: #eee0d7;
     --wdio-link-color: #000;
     --wdio-section-background-color: #fff;
-    --wdio-dark-section-background-color: #efefef;
+    --wdio-dark-section-background-color: #dfdfdf;
 }
 
 html[data-theme=dark] {
@@ -44,6 +51,21 @@ html[data-theme=dark] {
 @media (max-width: 996px) {
     :root {
         --wdio-spacing-vertical: 20px;
+    }
+
+    body .footer__links {
+        width: 100%;
+    }
+
+    body .footer__bottom {
+        width: 100%;
+    }
+
+    body .footer__bottom > div {
+        text-align: center;
+    }
+    body .footer__item img {
+        max-width: 200px;
     }
 }
 
@@ -97,6 +119,9 @@ html[data-theme=dark] {
     color: var(--wdio-link-color);
 }
 
+.footer__logo {
+    max-width: 125px;
+}
 .footer__links {
     width: 75%;
     float: right;
@@ -116,14 +141,13 @@ html[data-theme=dark] {
     text-align: left;
 }
 
-.footer__link-item[target="_blank"]:after {
-    padding: 0 4px;
-    content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' x='0px' y='0px' viewBox='0 0 100 100' width='15' height='15'%3E%3Cpath fill='gray' d=' M18.8,85.1h56l0,0c2.2,0,4-1.8,4-4v-32h-8v28h-48v-48h28v-8h-32l0, 0c-2.2,0-4,1.8-4,4v56C14.8,83.3,16.6,85.1,18.8,85.1z '%3E%3C/path%3E%3Cpolygon fill='gray' points=' 45.7,48.7 51.3,54.3 77.2,28.5 77.2,37.2 85.2,37.2 85.2,14.9 62.8, 14.9 62.8,22.9 71.5,22.9 '%3E%3C/polygon%3E%3C/svg%3E")
-}
-
 html[data-theme=dark] {
     --wdio-section-background-color: var(--ifm-footer-background-color);
     --wdio-dark-section-background-color: #18191A;
+}
+
+.learnmore a {
+    color: var(--ifm-color-primary);
 }
 
 .docusaurus-highlight-code-line {
@@ -220,6 +244,10 @@ html[data-theme=dark] div[class^='codeBlockTitle'] {
 div[role="tabpanel"] .prism-code {
     border-top-left-radius: 0;
 }
+
+ul.tabs {
+    margin-bottom: -1rem;
+}
 .tabs__item:hover {
     border-bottom-left-radius: 0;
 }
@@ -229,6 +257,10 @@ div[role="tabpanel"] .prism-code {
 
 a code {
     background-color: transparent;
+}
+
+td > pre {
+    margin-bottom: 0!important;
 }
 
 .highlightSection .token-line {
@@ -277,4 +309,13 @@ a code {
 div[role="tabpanel"] .margin-vert--md {
     margin-top: 0!important;
     margin-bottom: 0!important;
+}
+
+.tabs.runtime li:last-child:after {
+    content: "*";
+    color: red;
+    padding: 0 3px;
+    line-height: 15px;
+    display: block;
+    height: 15px;
 }

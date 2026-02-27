@@ -10,57 +10,61 @@ You can tunnel two different types of request through a proxy:
 
 ## Proxy Between Driver And Test
 
-If your company has a corporate proxy (e.g. on `http://my.corp.proxy.com:9090`) for all outgoing requests, follow the below steps to install and configure [global-agent](https://github.com/gajus/global-agent).
+If your company has a corporate proxy (e.g. on `http://my.corp.proxy.com:9090`) for all outgoing requests, you have two options to configure WebdriverIO to use the proxy:
 
-### Install global-agent
+### Option 1: Using Environment Variables (Recommended)
 
-```bash npm2yarn
-npm install global-agent --save-dev
+Starting from WebdriverIO v9.12.0, you can simply set the standard proxy environment variables:
+
+```bash
+export HTTP_PROXY=http://my.corp.proxy.com:9090
+export HTTPS_PROXY=http://my.corp.proxy.com:9090
+# Optional: bypass proxy for certain hosts
+export NO_PROXY=localhost,127.0.0.1,.internal.domain
 ```
 
-### Add global-agent bootstrap to your config file
+Then run your tests as usual. WebdriverIO will automatically use these environment variables for proxy configuration.
+
+### Option 2: Using undici's setGlobalDispatcher
+
+For more advanced proxy configurations or if you need programmatic control, you can use undici's `setGlobalDispatcher` method:
+
+#### Install undici
+
+```bash npm2yarn
+npm install undici --save-dev
+```
+
+#### Add undici setGlobalDispatcher to your config file
 
 Add the following require statement to the top of your config file.
 
 ```js title="wdio.conf.js"
-require('global-agent/bootstrap')
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 
-exports.config = {
+const dispatcher = new ProxyAgent({ uri: new URL(process.env.https_proxy || 'http://my.corp.proxy.com:9090').toString() });
+setGlobalDispatcher(dispatcher);
+
+export const config = {
     // ...
 }
 ```
 
-### Set global-agent environment variables
+Additional information about configuring the proxy can be located [here](https://github.com/nodejs/undici/blob/main/docs/docs/api/ProxyAgent.md).
 
-Before you start the test, make sure you've exported the variable in the terminal, like so:
+### Which Method Should I Use?
 
-```bash
-export GLOBAL_AGENT_HTTP_PROXY=http://my.corp.proxy.com:9090
-$ wdio wdio.conf.js
-```
+- **Use environment variables** if you want a simple, standard approach that works across different tools and doesn't require code changes.
+- **Use setGlobalDispatcher** if you need advanced proxy features like custom authentication, different proxy configurations per environment, or want to programmatically control proxy behavior.
 
-You can exclude URLs from the proxy by exporting the variable, like so:
+Both methods are fully supported and WebdriverIO will check for a global dispatcher first before falling back to environment variables.
 
-```bash
-export GLOBAL_AGENT_HTTP_PROXY=http://my.corp.proxy.com:9090
-export GLOBAL_AGENT_NO_PROXY='.foo.com'
-$ wdio wdio.conf.js
-```
+### Sauce Connect Proxy
 
-If necessary, you can specify `GLOBAL_AGENT_HTTPS_PROXY` to route HTTPS traffic through a different proxy than HTTP traffic.
+If you use [Sauce Connect Proxy](https://docs.saucelabs.com/secure-connections/sauce-connect-5), start it via:
 
-```bash
-export GLOBAL_AGENT_HTTP_PROXY=http://my.corp.proxy.com:9090
-export GLOBAL_AGENT_HTTPS_PROXY=http://my.corp.proxy.com:9091
-$ wdio.wdio.conf.js
-```
-
-`GLOBAL_AGENT_HTTP_PROXY` is used for both HTTP and HTTPS requests if `GLOBAL_AGENT_HTTPS_PROXY` is not set.
-
-If you use [Sauce Connect Proxy](https://wiki.saucelabs.com/display/DOCS/Sauce+Connect+Proxy), start it via:
-
-```bash
-$ sc -u $SAUCE_USERNAME -k $SAUCE_ACCESS_KEY --no-autodetect -p http://my.corp.proxy.com:9090
+```sh
+sc -u $SAUCE_USERNAME -k $SAUCE_ACCESS_KEY --no-autodetect -p http://my.corp.proxy.com:9090
 ```
 
 ## Proxy Between Browser And Internet
@@ -70,7 +74,7 @@ In order to tunnel the connection between the browser and the internet, you can 
 The `proxy` parameters can be applied via the standard capabilities the following way:
 
 ```js title="wdio.conf.js"
-exports.config = {
+export const config = {
     // ...
     capabilities: [{
         browserName: 'chrome',

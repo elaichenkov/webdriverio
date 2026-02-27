@@ -1,9 +1,11 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
-import { ELEMENT_KEY } from '../../../src/constants'
+import path from 'node:path'
+import { ELEMENT_KEY } from 'webdriver'
+import { expect, describe, it, vi } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('elem.react$', () => {
     it('does request to get React component with correct params', async () => {
@@ -22,7 +24,7 @@ describe('elem.react$', () => {
         }
         await elem.react$$('MyComp', options)
         expect(elem.elementId).toBe('some-elem-123')
-        expect(got.mock.calls.pop()[1].json.args)
+        expect(JSON.parse(vi.mocked(fetch).mock.calls.pop()![1]!.body as any).args)
             .toEqual([
                 'MyComp',
                 { some: 'props' },
@@ -46,7 +48,7 @@ describe('elem.react$', () => {
 
         await elem.react$$('MyComp')
         expect(elem.elementId).toBe('some-elem-123')
-        expect(got.mock.calls.pop()[1].json.args).toEqual([
+        expect(JSON.parse(vi.mocked(fetch).mock.calls.pop()![1]!.body as any).args).toEqual([
             'MyComp',
             {},
             {},
@@ -67,7 +69,11 @@ describe('elem.react$', () => {
 
         const elems = await browser.react$$('myComp')
 
-        expect(elems.filter(elem => elem.isReactElement).length).toBe(3)
+        expect(
+            (
+                await elems.filter(elem => Boolean(elem.isReactElement))
+            ).length
+        ).toBe(3)
         expect(elems.foundWith).toBe('react$$')
     })
 })

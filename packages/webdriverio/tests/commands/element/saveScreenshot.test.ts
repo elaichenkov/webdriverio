@@ -1,24 +1,32 @@
-import fs from 'fs'
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
-import * as utils from '../../../src/utils'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import type { MockInstance } from 'vitest'
+import { expect, describe, it, vi, beforeEach, afterEach } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import '../../../src/node.js'
 
-jest.mock('fs')
+vi.mocked(fs.access).mockResolvedValue()
+
+import { remote } from '../../../src/index.js'
+import * as utils from '../../../src/node/utils.js'
+
+vi.mock('fetch')
+vi.mock('fs/promises')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('saveScreenshot', () => {
-    let getAbsoluteFilepathSpy, assertDirectoryExistsSpy, writeFileSyncSpy
+    let pathResolveSpy: MockInstance
+    let assertDirectoryExistsSpy: MockInstance
+    const writeFileSyncSpy = vi.spyOn(fs, 'writeFile')
 
     beforeEach(() => {
-        getAbsoluteFilepathSpy = jest.spyOn(utils, 'getAbsoluteFilepath')
-        assertDirectoryExistsSpy = jest.spyOn(utils, 'assertDirectoryExists')
-        writeFileSyncSpy = jest.spyOn(fs, 'writeFileSync')
+        pathResolveSpy = vi.spyOn(path, 'resolve')
+        assertDirectoryExistsSpy = vi.spyOn(utils, 'assertDirectoryExists')
+        vi.spyOn(fs, 'access').mockResolvedValue()
     })
 
     afterEach(() => {
-        getAbsoluteFilepathSpy.mockClear()
+        pathResolveSpy.mockClear()
         assertDirectoryExistsSpy.mockClear()
         writeFileSyncSpy.mockClear()
     })
@@ -35,22 +43,24 @@ describe('saveScreenshot', () => {
         const screenshot = await elem.saveScreenshot('./packages/bar.png')
 
         // get path
-        expect(getAbsoluteFilepathSpy).toHaveBeenCalledTimes(1)
-        expect(getAbsoluteFilepathSpy).toHaveBeenCalledWith('./packages/bar.png')
+        expect(pathResolveSpy).toHaveBeenCalledWith('./packages/bar.png')
+
+        const resolvedPath = path.resolve('./packages/bar.png')
 
         // assert directory
         expect(assertDirectoryExistsSpy).toHaveBeenCalledTimes(1)
-        expect(assertDirectoryExistsSpy).toHaveBeenCalledWith(getAbsoluteFilepathSpy.mock.results[0].value)
+        expect(assertDirectoryExistsSpy).toHaveBeenCalledWith(resolvedPath)
 
         // request
-        expect(got.mock.calls[2][1].method).toBe('GET')
-        expect(got.mock.calls[2][0].pathname)
+        expect(vi.mocked(fetch).mock.calls[2][1]!.method).toBe('GET')
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/screenshot')
         expect(screenshot.toString()).toBe('some element screenshot')
 
         // write to file
         expect(writeFileSyncSpy).toHaveBeenCalledTimes(1)
-        expect(writeFileSyncSpy).toHaveBeenCalledWith(getAbsoluteFilepathSpy.mock.results[0].value, expect.any(Buffer))
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(resolvedPath, expect.any(Buffer))
     })
 
     it('should fail if no filename provided', async () => {
@@ -64,14 +74,9 @@ describe('saveScreenshot', () => {
 
         const elem = await browser.$('#elem')
 
-        // no file
-        await expect(
-            elem.saveScreenshot()
-        ).rejects.toEqual(expectedError)
-
+        // @ts-expect-error wrong parameter
+        await expect(elem.saveScreenshot()).rejects.toEqual(expectedError)
         // wrong extension
-        await expect(
-            elem.saveScreenshot('./file.txt')
-        ).rejects.toEqual(expectedError)
+        await expect(elem.saveScreenshot('./file.txt')).rejects.toEqual(expectedError)
     })
 })

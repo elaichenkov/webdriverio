@@ -1,5 +1,4 @@
-import fs from 'fs'
-import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
+import { environment } from '../../environment.js'
 
 /**
  *
@@ -7,9 +6,9 @@ import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
  *
  * <example>
     :saveScreenshot.js
-    it('should save a screenshot of the browser view', function () {
-        const elem = $('#someElem');
-        elem.saveScreenshot('./some/path/elemScreenshot.png');
+    it('should save a screenshot of the browser view', async () => {
+        const elem = await $('#someElem');
+        await elem.saveScreenshot('./some/path/elemScreenshot.png');
     });
  * </example>
  *
@@ -19,23 +18,12 @@ import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
  * @type utility
  *
  */
-export default async function saveScreenshot (
+export async function saveScreenshot (
     this: WebdriverIO.Element,
     filepath: string
 ) {
     /**
-     * type check
+     * run command implementation based on given environment
      */
-    if (typeof filepath !== 'string' || !filepath.endsWith('.png')) {
-        throw new Error('saveScreenshot expects a filepath of type string and ".png" file ending')
-    }
-
-    const absoluteFilepath = getAbsoluteFilepath(filepath)
-    assertDirectoryExists(absoluteFilepath)
-
-    const screenBuffer = await this.takeElementScreenshot(this.elementId)
-    const screenshot = Buffer.from(screenBuffer, 'base64')
-    fs.writeFileSync(absoluteFilepath, screenshot)
-
-    return screenshot
+    return environment.value.saveElementScreenshot.call(this, filepath)
 }

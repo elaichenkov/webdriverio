@@ -1,12 +1,11 @@
-import fs from 'fs'
+import { getBrowserObject } from '@wdio/utils'
 import type { ElementReference } from '@wdio/protocols'
 
-import { enhanceElementsArray } from '../../utils'
-import { getElements } from '../../utils/getElementObject'
-import { waitToLoadReact, react$$ as react$$Script } from '../../scripts/resq'
-import type { ReactSelectorOptions } from '../../types'
-
-const resqScript = fs.readFileSync(require.resolve('resq'))
+import { resqScript } from '../constant.js'
+import { enhanceElementsArray } from '../../utils/index.js'
+import { getElements } from '../../utils/getElementObject.js'
+import { waitToLoadReact, react$$ as react$$Script } from '../../scripts/resq.js'
+import type { ReactSelectorOptions } from '../../types.js'
 
 /**
  *
@@ -22,35 +21,38 @@ const resqScript = fs.readFileSync(require.resolve('resq'))
  *
  * <example>
     :pause.js
-    it('should calculate 7 * 6', () => {
-        browser.url('https://ahfarmer.github.io/calculator/');
+    it('should calculate 7 * 6', async () => {
+        await browser.url('https://ahfarmer.github.io/calculator/');
 
-        const orangeButtons = browser.react$$('t', {
+        const orangeButtons = await browser.react$$('t', {
             props: { orange: true }
         })
-        console.log(orangeButtons.map((btn) => btn.getText())); // prints "[ '÷', 'x', '-', '+', '=' ]"
+        console.log(await orangeButtons.map((btn) => btn.getText()));
+        // prints "[ '÷', 'x', '-', '+', '=' ]"
     });
  * </example>
  *
  * @alias react$$
- * @param {String}  selector        of React component
+ * @param {string}  selector        of React component
  * @param {ReactSelectorOptions=}                    options         React selector options
  * @param {Object=}                                  options.props   React props the element should contain
- * @param {Array<any>|number|string|object|boolean=} options.state  React state the element should be in
- * @return {ElementArray}
+ * @param {`Array<any>|number|string|object|boolean`=} options.state  React state the element should be in
+ * @return {WebdriverIO.ElementArray}
  *
  */
-export default async function react$$(
+export async function react$$(
     this: WebdriverIO.Element,
     selector: string,
     { props = {}, state = {} }: ReactSelectorOptions = {}
 ) {
+    const browser = await getBrowserObject(this)
     await this.executeScript(resqScript.toString(), [])
-    await this.execute(waitToLoadReact)
-    const res = await this.execute(
+    await browser.execute(waitToLoadReact)
+    const res = await browser.execute(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         react$$Script as any, selector, props, state, this
     ) as ElementReference[]
 
-    const elements = await getElements.call(this, selector, res, true)
+    const elements = await getElements.call(this, selector, res, { isReactElement: true })
     return enhanceElementsArray(elements, this, selector, 'react$$', [props, state])
 }

@@ -1,9 +1,13 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import got from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, vi } from 'vitest'
 
-describe('isEnabled test', () => {
-    it('should allow to check if an element is enabled', async () => {
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+
+describe('execute test', () => {
+    it('should execute the script', async () => {
         const browser = await remote({
             baseUrl: 'http://foobar.com',
             capabilities: {
@@ -12,12 +16,12 @@ describe('isEnabled test', () => {
         })
 
         await browser.execute((a, b, c) => a + b + c, 1, 2, 3)
-        expect(got.mock.calls[1][0].pathname)
+        expect((vi.mocked(fetch).mock.calls[1][0] as any).pathname)
             .toBe('/session/foobar-123/execute/sync')
-        expect(got.mock.calls[1][1].json.script)
-            .toBe('return ((a, b, c) => a + b + c).apply(null, arguments)')
-        expect(got.mock.calls[1][1].json.args)
-            .toEqual([1, 2, 3])
+        expect(JSON.parse(vi.mocked(fetch).mock.calls[1][1]?.body as string)).toEqual(expect.objectContaining({
+            script: expect.stringContaining('return ((a, b, c) => a + b + c).apply(null, arguments)'),
+            args: [1, 2, 3]
+        }))
     })
 
     it('should return correct value', async () => {
@@ -40,7 +44,9 @@ describe('isEnabled test', () => {
             }
         })
 
-        expect(() => browser.execute(null)).toThrow()
-        expect(() => browser.execute(1234)).toThrow()
+        // @ts-expect-error
+        await expect(() => browser.execute(null)).rejects.toThrow()
+        // @ts-expect-error
+        await expect(() => browser.execute(1234)).rejects.toThrow()
     })
 })

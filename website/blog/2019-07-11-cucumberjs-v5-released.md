@@ -1,15 +1,16 @@
 ---
 title: WebdriverIO V5 now also supports CucumberJS
-author: Wim Selles
-authorURL: http://github.com/wswebcreation
-authorImageURL: https://avatars2.githubusercontent.com/u/11979740?s=460&v=4
+authors: wim
 ---
 
 We are pleased to announce that we now have support for CucumberJS in WebdriverIO V5!!!!
 This has been a great challenge for the project committers so we're all very thankful for the time and effort they put into this.
+
+<!-- truncate -->
+
 So normally we would say
 
-```bash
+```sh
 npm install @wdio/cucumber-framework --save-dev
 ```
 
@@ -67,9 +68,9 @@ When you do this you can easily disable scenario's in your old project, and run 
 Before installing dependencies, we need to initialize an empty NPM project (this will allow us to the cli to install needed dependencies to our local project).
 To do this, run:
 
-```bash
-$ mkdir webdriverio-test && cd webdriverio-test
-$ npm init -y
+```sh
+mkdir webdriverio-test && cd webdriverio-test
+npm init -y
 ```
 
 The `-y` will answer 'yes' to all the prompts, giving us a standard NPM project. Feel free to omit the `-y` if you'd like to specify your own project details.
@@ -79,15 +80,15 @@ We recommend using the test runner because it comes with a lot of useful feature
 
 Now we need to install the cli. Do that by running:
 
-```bash
-$ npm i --save-dev @wdio/cli
+```sh
+npm i --save-dev @wdio/cli
 ```
 
 #### 3. Generate Configuration File
 We'll next want to generate a configuration file that stores all of our WebdriverIO settings. To do that just run the configuration utility:
 
-```bash
-$ npx wdio config
+```sh
+npx wdio config
 ```
 
 A question interface pops up. It will help to create the config easy and fast and install all needed dependencies.
@@ -120,8 +121,7 @@ Because you created a clean project you can now easily do the following:
 And you're done, time to party.
 
 # Support
-If you need support you can find us on the `WebdriverIO`- Gitter channel by clicking on this link [![Gitter chat](https://badges.gitter.im/webdriverio/webdriverio.svg)](https://gitter.im/webdriverio/webdriverio "Gitter chat").
-When you ask for support we only have 1 question for you, please provide us a detailed description of your issue, what you already did and so on. Otherwise you ask us to find a needle in a haystack and trust me, that will be very hard for us.
+If you need support you can find help in the community [Discord](https://discord.webdriver.io) server. When you ask for support we only have 1 question for you, please provide us a detailed description of your issue, what you already did and so on. Otherwise you ask us to find a needle in a haystack and trust me, that will be very hard for us.
 
 Happy testing!
 

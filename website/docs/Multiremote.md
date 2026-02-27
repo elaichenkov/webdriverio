@@ -51,7 +51,7 @@ import { multiremote } from 'webdriverio'
     await elem.click()
 
     // only click with one browser (Firefox)
-    await elem.myFirefoxBrowser.click()
+    await elem.getInstance('myFirefoxBrowser').click()
 })()
 ```
 
@@ -60,7 +60,7 @@ import { multiremote } from 'webdriverio'
 In order to use multiremote in the WDIO testrunner, just define the `capabilities` object in your `wdio.conf.js` as an object with the browser names as keys (instead of a list of capabilities):
 
 ```js
-export.config = {
+export const config = {
     // ...
     capabilities: {
         myChromeBrowser: {
@@ -80,10 +80,42 @@ export.config = {
 
 This will create two WebDriver sessions with Chrome and Firefox. Instead of just Chrome and Firefox you can also boot up two mobile devices using [Appium](http://appium.io) or one mobile device and one browser.
 
+You can also run multiremote in parallel by putting the browser capabilities object in an array. Please make sure to have `capabilities` field included in each browser, as this is how we tell each mode apart.
+
+```js
+export const config = {
+    // ...
+    capabilities: [{
+        myChromeBrowser0: {
+            capabilities: {
+                browserName: 'chrome'
+            }
+        },
+        myFirefoxBrowser0: {
+            capabilities: {
+                browserName: 'firefox'
+            }
+        }
+    }, {
+        myChromeBrowser1: {
+            capabilities: {
+                browserName: 'chrome'
+            }
+        },
+        myFirefoxBrowser1: {
+            capabilities: {
+                browserName: 'firefox'
+            }
+        }
+    }]
+    // ...
+}
+```
+
 You can even boot up one of the [cloud services backend](https://webdriver.io/docs/cloudservices.html) together with local Webdriver/Appium, or Selenium Standalone instances. WebdriverIO automatically detect cloud backend capabilities if you specified either of `bstack:options` ([Browserstack](https://webdriver.io/docs/browserstack-service.html)), `sauce:options` ([SauceLabs](https://webdriver.io/docs/sauce-service.html)), or `tb:options` ([TestingBot](https://webdriver.io/docs/testingbot-service.html)) in browser capabilities.
 
 ```js
-export.config = {
+export const config = {
     // ...
     user: process.env.BROWSERSTACK_USERNAME,
     key: process.env.BROWSERSTACK_ACCESS_KEY,
@@ -121,10 +153,10 @@ Each command’s result will be an object with the browser names as the key, and
 
 ```js
 // wdio testrunner example
-browser.url('https://www.whatismybrowser.com')
+await browser.url('https://www.whatismybrowser.com')
 
-const elem = $('.string-major')
-const result = elem.getText()
+const elem = await $('.string-major')
+const result = await elem.getText()
 
 console.log(result[0]) // returns: 'Chrome 40 on Mac OS X (Yosemite)'
 console.log(result[1]) // returns: 'Firefox 35 on Mac OS X (Yosemite)'
@@ -137,14 +169,17 @@ Sometimes it is necessary to do different things in each browser in order to tes
 When using the WDIO testrunner, it registers the browser names with their instances to the global scope:
 
 ```js
-myChromeBrowser.$('#message').setValue('Hi, I am Chrome')
-myChromeBrowser.$('#send').click()
+const myChromeBrowser = browser.getInstance('myChromeBrowser')
+await myChromeBrowser.$('#message').setValue('Hi, I am Chrome')
+await myChromeBrowser.$('#send').click()
 
 // wait until messages arrive
-$('.messages').waitForExist()
+await $('.messages').waitForExist()
 // check if one of the messages contain the Chrome message
 assert.true(
-    $$('.messages').map((m) => m.getText()).includes('Hi, I am Chrome')
+    (
+        await $$('.messages').map((m) => m.getText())
+    ).includes('Hi, I am Chrome')
 )
 ```
 
@@ -178,8 +213,45 @@ Cucumber file:
 
 Step definition file:
 ```js
-When(/^User (.) types a message into the chat/, (userId) => {
-    browser[`user${userId}`].$('#message').setValue('Hi, I am Chrome')
-    browser[`user${userId}`].$('#send').click()
+When(/^User (.) types a message into the chat/, async (userId) => {
+    await browser.getInstance(`user${userId}`).$('#message').setValue('Hi, I am Chrome')
+    await browser.getInstance(`user${userId}`).$('#send').click()
 })
+```
+
+## Extending TypeScript Types
+
+If you are using TypeScript and like to access the driver instance from the multiremote object directly, you can also extend the multiremote types to do so. For example, given the following capabilities:
+
+```ts title=wdio.conf.ts
+export const config: WebdriverIO.MultiremoteConfig = {
+    // ...
+    capabilities: {
+        myAppiumDriver: {
+            // ...
+        },
+        myChromeDriver: {
+            // ...
+        }
+    }
+    // ...
+}
+```
+
+You can extend the multiremote instance by adding your custom driver names, e.g.:
+
+```ts title=wdio.d.ts
+declare namespace WebdriverIO {
+    interface MultiRemoteBrowser {
+        myAppiumDriver: WebdriverIO.Browser
+        myChromeDriver: WebdriverIO.Browser
+    }
+}
+```
+
+Now you can access the drivers directly via, e.g.:
+
+```ts
+multiRemoteBrowser.myAppiumDriver.$$(...)
+multiRemoteBrowser.myChromeDriver.$(...)
 ```

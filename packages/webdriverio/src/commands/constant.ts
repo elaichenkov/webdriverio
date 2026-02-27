@@ -1,4 +1,4 @@
-import { TouchAction, TouchActions } from '../types'
+import type { TouchAction, TouchActions } from '../types.js'
 
 /**
  * Constants around commands
@@ -6,6 +6,14 @@ import { TouchAction, TouchActions } from '../types'
 const TOUCH_ACTIONS = ['press', 'longPress', 'tap', 'moveTo', 'wait', 'release']
 const POS_ACTIONS = TOUCH_ACTIONS.slice(0, 4)
 const ACCEPTED_OPTIONS = ['x', 'y', 'element']
+export const SCRIPT_PREFIX = '/* __wdio script__ */'
+export const SCRIPT_SUFFIX = '/* __wdio script end__ */'
+
+/**
+ * These scripts are loaded by Esbuild at build time and injected into the bundle
+ */
+declare const WDIO_RESQ_SCRIPT: string
+export const resqScript = WDIO_RESQ_SCRIPT
 
 interface FormattedTouchAction extends Omit<TouchAction, 'element'> {
     element?: string
@@ -22,7 +30,7 @@ export const formatArgs = function (
 ): FormattedActions[] {
     return actions.map((action: TouchAction) => {
         if (Array.isArray(action)) {
-            return formatArgs(scope, action) as any
+            return formatArgs(scope, action) as unknown as FormattedActions
         }
 
         if (typeof action === 'string') {
@@ -37,16 +45,22 @@ export const formatArgs = function (
         /**
          * don't propagate for actions that don't require element options
          */
-        const actionElement = action.element && typeof (action.element as any as WebdriverIO.Element).elementId === 'string'
-            ? (action.element as any as WebdriverIO.Element).elementId
+        const actionElement = action.element && typeof (action.element as unknown as WebdriverIO.Element).elementId === 'string'
+            ? (action.element as unknown as WebdriverIO.Element).elementId
             : (scope as WebdriverIO.Element).elementId
         if (POS_ACTIONS.includes(action.action) && formattedAction.options && actionElement) {
             formattedAction.options.element = actionElement
         }
 
-        if (formattedAction.options && typeof action.x === 'number' && isFinite(action.x)) formattedAction.options.x = action.x
-        if (formattedAction.options && typeof action.y === 'number' && isFinite(action.y)) formattedAction.options.y = action.y
-        if (formattedAction.options && action.ms) formattedAction.options.ms = action.ms
+        if (formattedAction.options && typeof action.x === 'number' && isFinite(action.x)) {
+            formattedAction.options.x = action.x
+        }
+        if (formattedAction.options && typeof action.y === 'number' && isFinite(action.y)) {
+            formattedAction.options.y = action.y
+        }
+        if (formattedAction.options && action.ms) {
+            formattedAction.options.ms = action.ms
+        }
 
         /**
          * remove options property if empty
@@ -111,7 +125,7 @@ export const touchAction = function (
     const formattedAction = formatArgs(this, actions)
     const protocolCommand = Array.isArray(actions[0])
         // cast old JSONWP
-        ? this.multiTouchPerform.bind(this) as unknown as (actions: object[]) => void
+        ? this.multiTouchPerform.bind(this) as unknown as (actions: object[]) => Promise<void>
         : this.touchPerform.bind(this)
     formattedAction.forEach((params) => validateParameters(params))
     return protocolCommand(formattedAction)

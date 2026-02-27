@@ -1,11 +1,7 @@
 import type { RectReturn } from '@wdio/protocols'
-import { getElementRect } from '../../utils'
+import { getElementRect } from '../../utils/index.js'
 
-export type Location = Pick<RectReturn, 'x' | 'y'>;
-
-function getLocation (this: WebdriverIO.Element): Promise<Location>
-
-function getLocation (this: WebdriverIO.Element, prop: keyof Location): Promise<number>
+export type Location = Pick<RectReturn, 'x' | 'y'>
 
 /**
  *
@@ -14,45 +10,38 @@ function getLocation (this: WebdriverIO.Element, prop: keyof Location): Promise<
  *
  * <example>
     :getLocation.js
-    it('should demonstrate the getLocation function', () => {
-        browser.url('http://github.com');
-        const logo = $('.octicon-mark-github')
-        const location = logo.getLocation();
+    it('should demonstrate the getLocation function', async () => {
+        await browser.url('http://github.com');
+        const logo = await $('.octicon-mark-github')
+        const location = await logo.getLocation();
         console.log(location); // outputs: { x: 150, y: 20 }
 
-        const xLocation = logo.getLocation('x')
+        const xLocation = await logo.getLocation('x')
         console.log(xLocation); // outputs: 150
 
-        const yLocation = logo.getLocation('.octicon-mark-github', 'y')
+        const yLocation = await logo.getLocation('y')
         console.log(yLocation); // outputs: 20
     });
  * </example>
  *
  * @alias element.getLocation
- * @param {String} prop    can be "x" or "y" to get a result value directly for easier assertions
- * @return {Object|Number}  The X and Y coordinates for the element on the page (`{x:number, y:number}`)
+ * @param {string} prop    can be "x" or "y" to get a result value directly for easier assertions
+ * @return {Object|Number}  The X and Y coordinates for the element on the page `{x:number, y:number}`
  * @uses protocol/elementIdLocation
  * @type property
  */
-async function getLocation (
+export function getLocation (this: WebdriverIO.Element): Promise<Location>
+export function getLocation (this: WebdriverIO.Element, prop: keyof Location): Promise<number>
+export async function getLocation (
     this: WebdriverIO.Element,
     prop?: keyof Location
 ): Promise<Location | number> {
-    let location: Partial<RectReturn> = {}
-
-    if (this.isW3C) {
-        location = await getElementRect(this)
-        delete location.width
-        delete location.height
-    } else {
-        location = await this.getElementLocation(this.elementId)
-    }
+    const  { x, y } = await getElementRect(this)
+    const location = { x, y }
 
     if (prop === 'x' || prop === 'y') {
-        return location[prop] as number
+        return location[prop] satisfies number
     }
 
-    return location as Location
+    return location satisfies Location
 }
-
-export default getLocation

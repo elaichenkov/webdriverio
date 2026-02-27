@@ -1,53 +1,59 @@
 /* istanbul ignore file */
 
-import initialisePlugin from './initialisePlugin'
-import { initialiseWorkerService, initialiseLauncherService } from './initialiseServices'
-import webdriverMonad from './monad'
+import webdriverMonad from './monad.js'
+import initializePlugin from './initializePlugin.js'
+import { startWebDriver } from './startWebDriver.js'
+import { initializeWorkerService, initializeLauncherService } from './initializeServices.js'
 import {
-    commandCallStructure, isValidParameter, getArgumentType, safeRequire,
-    isFunctionAsync, transformCommandLogResult, canAccess, sleep
-} from './utils'
-import {
-    wrapCommand, runFnInFiberContext, executeHooksWithArgs,
-    hasWdioSyncSupport, executeSync, executeAsync,
-} from './shim'
-import { testFnWrapper, runTestInFiberContext } from './test-framework'
-import {
-    isW3C, capabilitiesEnvironmentDetector,
-    sessionEnvironmentDetector, devtoolsEnvironmentDetector
-} from './envDetector'
+    commandCallStructure, isValidParameter, getArgumentType, safeImport,
+    isFunctionAsync, transformCommandLogResult, sleep, isAppiumCapability,
+    userImport, getBrowserObject, enableFileLogging,
+} from './utils.js'
+import { wrapCommand, executeHooksWithArgs, executeAsync } from './shim.js'
+import * as asyncIterators from './pIteration.js'
+import { testFnWrapper, wrapGlobalTestMethod } from './test-framework/index.js'
+import { isW3C, isBidi, capabilitiesEnvironmentDetector, sessionEnvironmentDetector } from './envDetector.js'
+import { UNICODE_CHARACTERS, HOOK_DEFINITION } from './constants.js'
 
 export {
-    initialisePlugin,
-    initialiseLauncherService,
-    initialiseWorkerService,
+    startWebDriver,
+    initializePlugin,
+    initializeLauncherService,
+    initializeWorkerService,
     isFunctionAsync,
     transformCommandLogResult,
     webdriverMonad,
     commandCallStructure,
     isValidParameter,
     getArgumentType,
-    safeRequire,
-    canAccess,
+    safeImport,
     sleep,
+    isAppiumCapability,
+    userImport,
+    getBrowserObject,
+    enableFileLogging,
+    asyncIterators,
 
     /**
-     * wdio-sync shim
+     * runner shim
      */
     wrapCommand,
-    executeSync,
     executeAsync,
-    runFnInFiberContext,
-    runTestInFiberContext,
+    wrapGlobalTestMethod,
     testFnWrapper,
     executeHooksWithArgs,
-    hasWdioSyncSupport,
 
     /**
      * environmentDetector
      */
     isW3C,
+    isBidi,
     sessionEnvironmentDetector,
     capabilitiesEnvironmentDetector,
-    devtoolsEnvironmentDetector
+
+    /**
+     * constants
+     */
+    UNICODE_CHARACTERS,
+    HOOK_DEFINITION
 }

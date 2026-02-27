@@ -1,44 +1,31 @@
-import type { Status } from './types'
-
-export const PASSED = 'passed'
-export const FAILED = 'failed'
-export const BROKEN = 'broken'
-export const PENDING = 'pending'
-export const CANCELED = 'canceled'
-export const SKIPPED = 'skipped'
-
-const testStatuses: Record<string, Status> = {
-    PASSED,
-    FAILED,
-    BROKEN,
-    PENDING
-} as const
-const stepStatuses: Record<string, Status> = {
-    PASSED,
-    FAILED,
-    BROKEN,
-    CANCELED,
-    SKIPPED
-} as const
-
-const events = {
-    addLabel: 'allure:addLabel',
-    addFeature: 'allure:addFeature',
-    addStory: 'allure:addStory',
-    addSeverity: 'allure:addSeverity',
-    addIssue: 'allure:addIssue',
-    addTestId: 'allure:addTestId',
-    addEnvironment: 'allure:addEnvironment',
-    addDescription: 'allure:addDescription',
-    addAttachment: 'allure:addAttachment',
+export const events = {
+    runtimeMessage: 'allure:runtimeMessage',
+    addTestInfo: 'allure:addTestInfo',
     startStep: 'allure:startStep',
     endStep: 'allure:endStep',
+    addLabel: 'allure:addLabel',
+    addLink: 'allure:addLink',
+    addFeature: 'allure:addFeature',
+    addStory: 'allure:addStory',
+    addEpic: 'allure:addEpic',
+    addSuite: 'allure:addSuite',
+    addSubSuite: 'allure:addSubSuite',
+    addParentSuite: 'allure:addParentSuite',
+    addOwner: 'allure:addOwner',
+    addSeverity: 'allure:addSeverity',
+    addTag: 'allure:addTag',
+    addIssue: 'allure:addIssue',
+    addAllureId: 'allure:addAllureId',
+    addTestId: 'allure:addTestId',
+    addDescription: 'allure:addDescription',
+    addAttachment: 'allure:addAttachment',
     addStep: 'allure:addStep',
-    addArgument: 'allure:addArgument'
+    addArgument: 'allure:addArgument',
+    addAllureStep: 'allure:addAllureStep',
 } as const
 
-const mochaEachHooks = ['"before each" hook', '"after each" hook'] as const
-const mochaAllHooks = ['"before all" hook', '"after all" hook'] as const
-const linkPlaceholder = '{}'
+export const DEFAULT_CID = 'default'
 
-export { testStatuses, stepStatuses, events, mochaEachHooks, mochaAllHooks, linkPlaceholder }
+export const eachHooks = ['"before each" hook', '"after each" hook'] as const
+export const allHooks = ['"before all" hook', '"after all" hook'] as const
+export const linkPlaceholder = '{}'

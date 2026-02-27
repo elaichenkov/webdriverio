@@ -1,10 +1,35 @@
 {
+  "name": "wdio-example",
+  "version": "1.0.0",
+  "description": "A simple example of how to use WebdriverIO using its testrunner capabilities",
+  "type": "module",
+  "private": true,
   "scripts": {
-    "test:mocha": "../../packages/wdio-cli/bin/wdio.js ./mocha/wdio.conf.js",
-    "test:jasmine": "../../packages/wdio-cli/bin/wdio.js ./jasmine/wdio.conf.js",
-    "test:cucumber": "../../packages/wdio-cli/bin/wdio.js ./cucumber/wdio.conf.js",
-    "test:multiremote": "../../packages/wdio-cli/bin/wdio.js ./multiremote/wdio.conf.js",
-    "test:customReporter": "../../packages/wdio-cli/bin/wdio.js ./custom-reporter/wdio.conf.js",
-    "test:customService": "../../packages/wdio-cli/bin/wdio.js ./custom-service/wdio.conf.js"
+    "test:mocha": "wdio run ./mocha/wdio.conf.ts",
+    "test:jasmine": "wdio run ./jasmine/wdio.conf.ts",
+    "test:cucumber": "wdio run ./cucumber/wdio.conf.ts",
+    "test:multiremote": "wdio run ./multiremote/wdio.conf.js",
+    "test:customReporter": "wdio run ./custom-reporter/wdio.conf.js",
+    "test:customService": "wdio run ./custom-service/wdio.conf.js",
+    "test:viteVue": "cd ./vite-vue-example && npm run wdio"
+  },
+  "dependencies": {
+    "@wdio/browser-runner": "workspace:*",
+    "@wdio/config": "workspace:*",
+    "@wdio/cli": "workspace:*",
+    "@wdio/cucumber-framework": "workspace:*",
+    "@wdio/dot-reporter": "workspace:*",
+    "@wdio/globals": "workspace:*",
+    "@wdio/jasmine-framework": "workspace:*",
+    "@wdio/junit-reporter": "workspace:*",
+    "@wdio/lighthouse-service": "workspace:*",
+    "@wdio/local-runner": "workspace:*",
+    "@wdio/mocha-framework": "workspace:*",
+    "@wdio/repl": "workspace:*",
+    "@wdio/shared-store-service": "workspace:*",
+    "@wdio/spec-reporter": "workspace:*",
+    "@wdio/types": "workspace:*",
+    "webdriver": "workspace:*",
+    "webdriverio": "workspace:*"
   }
 }

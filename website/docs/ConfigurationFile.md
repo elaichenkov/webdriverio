@@ -1,14 +1,14 @@
 ---
 id: configurationfile
-title: Testrunner Configuration
+title: Configuration File
 ---
 
-The configuration file contains all necessary information to run your test suite. It’s just a NodeJS module that exports a JSON.
+The configuration file contains all necessary information to run your test suite. It’s a NodeJS module that exports a JSON.
 
 Here is an example configuration with all supported properties and additional information:
 
 ```js
-exports.config = {
+export const config = {
 
     // ==================================
     // Where should your test be launched
@@ -21,7 +21,7 @@ exports.config = {
     // =====================
     // Host address of the running Selenium server. This information is usually obsolete, as
     // WebdriverIO automatically connects to localhost. Also if you are using one of the
-    // supported cloud services like Sauce Labs, Browserstack, Testing Bot or LambdaTest, you also don't
+    // supported cloud services like Sauce Labs, Browserstack, Testing Bot or TestMu AI (Formerly LambdaTest), you also don't
     // need to define host and port information (because WebdriverIO can figure that out
     // from your user and key information). However, if you are using a private Selenium
     // backend, you should define the `hostname`, `port`, and `path` here.
@@ -35,7 +35,7 @@ exports.config = {
     // =================
     // Service Providers
     // =================
-    // WebdriverIO supports Sauce Labs, Browserstack, Testing Bot and LambdaTest. (Other cloud providers
+    // WebdriverIO supports Sauce Labs, Browserstack, Testing Bot and TestMu AI (Formerly LambdaTest). (Other cloud providers
     // should work, too.) These services define specific `user` and `key` (or access key)
     // values you must put here, in order to connect to these services.
     //
@@ -51,22 +51,21 @@ exports.config = {
     // Sauce Labs provides a [headless offering](https://saucelabs.com/products/web-testing/sauce-headless-testing)
     // that allows you to run Chrome and Firefox tests headless.
     //
-    headless: false
+    headless: false,
     //
     // ==================
     // Specify Test Files
     // ==================
     // Define which test specs should run. The pattern is relative to the directory
-    // from which `wdio` was called.
+    // of the configuration file being run.
     //
     // The specs are defined as an array of spec files (optionally using wildcards
     // that will be expanded). The test for each spec file will be run in a separate
     // worker process. In order to have a group of spec files run in the same worker
-    // process simply enclose them in an array within the specs array.
+    // process enclose them in an array within the specs array.
     //
-    // If you are calling `wdio` from an NPM script (see https://docs.npmjs.com/cli/run-script),
-    // then the current working directory is where your `package.json` resides, so `wdio`
-    // will be called from there.
+    // The path of the spec files will be resolved relative from the directory of
+    // of the config file unless it's absolute.
     //
     specs: [
         'test/spec/**',
@@ -93,16 +92,22 @@ exports.config = {
     // Therefore, if you have 10 spec files and you set `maxInstances` to 10, all spec files
     // will be tested at the same time and 30 processes will be spawned.
     //
-    // The property basically handles how many capabilities from the same test should run tests.
+    // The property handles how many capabilities from the same test should run tests.
     //
     maxInstances: 10,
     //
     // Or set a limit to run tests with a specific capability.
     maxInstancesPerCapability: 10,
     //
+    // Inserts WebdriverIO's globals (e.g. `browser`, `$` and `$$`) into the global environment.
+    // If you set to `false`, you should import from `@wdio/globals`. Note: WebdriverIO doesn't
+    // handle injection of test framework specific globals.
+    //
+    injectGlobals: true,
+    //
     // If you have trouble getting all important capabilities together, check out the
     // Sauce Labs platform configurator - a great tool to configure your capabilities:
-    // https://docs.saucelabs.com/reference/platforms-configurator
+    // https://docs.saucelabs.com/basics/platform-configurator
     //
     capabilities: [{
         browserName: 'chrome',
@@ -123,9 +128,9 @@ exports.config = {
         // maxInstances can get overwritten per capability. So if you have an in house Selenium
         // grid with only 5 firefox instance available you can make sure that not more than
         // 5 instance gets started at a time.
-        maxInstances: 5,
+        'wdio:maxInstances': 5,
         browserName: 'firefox',
-        specs: [
+        'wdio:specs': [
             'test/ffOnly/*'
         ],
         'moz:firefoxOptions': {
@@ -156,7 +161,7 @@ exports.config = {
     // use 'silent' level to disable logger
     logLevels: {
         webdriver: 'info',
-        '@wdio/applitools-service': 'info'
+        '@wdio/appium-service': 'info'
     },
     //
     // Set directory to store all logs into
@@ -194,7 +199,7 @@ exports.config = {
     specFileRetries: 1,
     // Delay in seconds between the spec file retry attempts
     specFileRetriesDelay: 0,
-    // Whether or not retried specfiles should be retried immediately or deferred to the end of the queue
+    // Whether or not retried spec files should be retried immediately or deferred to the end of the queue
     specFileRetriesDeferred: false,
     //
     // Test reporter for stdout.
@@ -243,50 +248,24 @@ exports.config = {
         compiler: [],       // <string[]> ("extension:module") require files with the given EXTENSION after requiring MODULE (repeatable)
         dryRun: false,      // <boolean> invoke formatters without executing steps
         failFast: false,    // <boolean> abort the run on first failure
-        format: ['pretty'], // <string[]> (type[:path]) specify the output format, optionally supply PATH to redirect formatter output (repeatable)
         snippets: true,     // <boolean> hide step definition snippets for pending steps
         source: true,       // <boolean> hide source URIs
-        profile: [],        // <string[]> (name) specify the profile to use
         strict: false,      // <boolean> fail if there are any undefined or pending steps
         tagExpression: '',  // <string> (expression) only execute the features or scenarios with tags matching the expression
         timeout: 20000,     // <number> timeout for step definitions
         ignoreUndefinedDefinitions: false, // <boolean> Enable this config to treat undefined definitions as warnings.
         scenarioLevelReporter: false // Enable this to make webdriver.io behave as if scenarios and not steps were the tests.
     },
-    // For convenience, if ts-node or @babel/register modules are detected
-    // they are automatically loaded for config parsing so that TypeScript and
-    // future ES features can be used in wdio configs, and are also
-    // automatically loaded for test running so that tests can be written
-    // using TypeScript and future ES features.
-    // Because this may not be ideal in every situation, the following options
-    // may be used to customize the loading for test running, incase it has
-    // other requirements.
-    autoCompileOpts: {
-        //
-        // To disable auto-loading entirely set this to false.
-        autoCompile: true, // <boolean> Disable this to turn off autoloading. Note: When disabling, you will need to handle calling any such libraries yourself.
-        //
-        // If you have ts-node installed, you can customize how options are passed to it here:
-        // Any valid ts-node config option is allowed. Alternatively the ENV Vars could also be used instead of this.
-        // See also: https://github.com/TypeStrong/ts-node#cli-and-programmatic-options
-        // See also RegisterOptions in https://github.com/TypeStrong/ts-node/blob/master/src/index.ts
-        tsNodeOpts: {
-            transpileOnly: true,
-            project: 'tsconfig.json'
-        },
-        // If you have tsconfig-paths installed and provide a tsConfigPathsOpts
-        // option, it will be automatically registered during bootstrap.
-        tsConfigPathsOpts: {
-            baseUrl: './'
-        },
-        //
-        // If @babel/register is installed, you can customize how options are passed to it here:
-        // Any valid @babel/register config option is allowed.
-        // https://babeljs.io/docs/en/babel-register#specifying-options
-        babelOpts: {
-            ignore: []
-        },
-    },
+    // Specify a custom tsconfig path - WDIO uses `tsx` to compile TypeScript files
+    // Your TSConfig is automatically detected from the current working directory
+    // but you can specify a custom path here or by setting the TSX_TSCONFIG_PATH env var
+    // See the `tsx` docs: https://tsx.is/dev-api/node-cli#custom-tsconfig-json-path
+    //
+    // Note: This setting will be overriden by the TSX_TSCONFIG_PATH env var and/or the cli --tsConfigPath argument if they are specified.
+    // This setting will be ignored if node is unable to parse your wdio.conf.ts file without help from tsx, e.g. if you have path
+    // aliases setup in tsconfig.json and you use those path aliases inside your wdio.config.ts file.
+    // Only use this if you are using a .js config file or your .ts config file is valid JavaScript.
+    tsConfigPath: 'path/to/tsconfig.json',
     //
     // =====
     // Hooks
@@ -298,7 +277,7 @@ exports.config = {
     //
     /**
      * Gets executed once before all workers get launched.
-     * @param {Object} config wdio configuration object
+     * @param {object} config wdio configuration object
      * @param {Array.<Object>} capabilities list of capabilities details
      */
     onPrepare: function (config, capabilities) {
@@ -306,18 +285,27 @@ exports.config = {
     /**
      * Gets executed before a worker process is spawned and can be used to initialize specific service
      * for that worker as well as modify runtime environments in an async fashion.
-     * @param  {String} cid      capability id (e.g 0-0)
-     * @param  {[type]} caps     object containing capabilities for session that will be spawn in the worker
-     * @param  {[type]} specs    specs to be run in the worker process
-     * @param  {[type]} args     object that will be merged with the main configuration once worker is initialized
-     * @param  {[type]} execArgv list of string arguments passed to the worker process
+     * @param  {string} cid      capability id (e.g 0-0)
+     * @param  {object} caps     object containing capabilities for session that will be spawn in the worker
+     * @param  {object} specs    specs to be run in the worker process
+     * @param  {object} args     object that will be merged with the main configuration once worker is initialized
+     * @param  {object} execArgv list of string arguments passed to the worker process
      */
     onWorkerStart: function (cid, caps, specs, args, execArgv) {
     },
     /**
-     * Gets executed just before initializing the webdriver session and test framework. It allows you
+     * Gets executed after a worker process has exited.
+     * @param  {string} cid      capability id (e.g 0-0)
+     * @param  {number} exitCode 0 - success, 1 - fail
+     * @param  {object} specs    specs to be run in the worker process
+     * @param  {number} retries  number of retries used
+     */
+    onWorkerEnd: function (cid, exitCode, specs, retries) {
+    },
+    /**
+     * Gets executed before initializing the webdriver session and test framework. It allows you
      * to manipulate configurations depending on the capability or spec.
-     * @param {Object} config wdio configuration object
+     * @param {object} config wdio configuration object
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {Array.<String>} specs List of spec file paths that are to be run
      */
@@ -328,69 +316,74 @@ exports.config = {
      * variables like `browser`. It is the perfect place to define custom commands.
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {Array.<String>} specs        List of spec file paths that are to be run
-     * @param {Object}         browser      instance of created browser/device session
+     * @param {object}         browser      instance of created browser/device session
      */
     before: function (capabilities, specs, browser) {
     },
     /**
-     * Gets executed before the suite starts.
-     * @param {Object} suite suite details
+     * Gets executed before the suite starts (in Mocha/Jasmine only).
+     * @param {object} suite suite details
      */
     beforeSuite: function (suite) {
     },
     /**
      * This hook gets executed _before_ every hook within the suite starts.
-     * (For example, this runs before calling `before`, `beforeEach`, `after`, `afterEach` in Mocha.)
-     *
-     * (`stepData` and `world` are Cucumber-specific.)
+     * (For example, this runs before calling `before`, `beforeEach`, `after`, `afterEach` in Mocha.). In Cucumber `context` is the World object.
      *
      */
-    beforeHook: function (test, context/*, stepData, world*/) {
+    beforeHook: function (test, context, hookName) {
     },
     /**
      * Hook that gets executed _after_ every hook within the suite ends.
-     * (For example, this runs after calling `before`, `beforeEach`, `after`, `afterEach` in Mocha.)
-     *
-     * (`stepData` and `world` are Cucumber-specific.)
+     * (For example, this runs after calling `before`, `beforeEach`, `after`, `afterEach` in Mocha.). In Cucumber `context` is the World object.
      */
-    afterHook: function (test, context, { error, result, duration, passed, retries }/*, stepData, world*/) {
+    afterHook: function (test, context, { error, result, duration, passed, retries }, hookName) {
     },
     /**
-     * Function to be executed before a test (in Mocha/Jasmine) starts.
+     * Function to be executed before a test (in Mocha/Jasmine only)
+     * @param {object} test    test object
+     * @param {object} context scope object the test was executed with
      */
     beforeTest: function (test, context) {
     },
     /**
      * Runs before a WebdriverIO command is executed.
-     * @param {String} commandName hook command name
+     * @param {string} commandName hook command name
      * @param {Array} args arguments that the command would receive
      */
     beforeCommand: function (commandName, args) {
     },
     /**
      * Runs after a WebdriverIO command gets executed
-     * @param {String} commandName hook command name
+     * @param {string} commandName hook command name
      * @param {Array} args arguments that command would receive
-     * @param {Number} result 0 - command success, 1 - command error
-     * @param {Object} error error object, if any
+     * @param {*} result result of the command
+     * @param {Error} error error object, if any
      */
     afterCommand: function (commandName, args, result, error) {
     },
     /**
-     * Function to be executed after a test (in Mocha/Jasmine)
+     * Function to be executed after a test (in Mocha/Jasmine only)
+     * @param {object}  test             test object
+     * @param {object}  context          scope object the test was executed with
+     * @param {Error}   result.error     error object in case the test fails, otherwise `undefined`
+     * @param {*}       result.result    return object of test function
+     * @param {number}  result.duration  duration of test
+     * @param {boolean} result.passed    true if test has passed, otherwise false
+     * @param {object}  result.retries   information about spec related retries, e.g. `{ attempts: 0, limit: 0 }`
      */
     afterTest: function (test, context, { error, result, duration, passed, retries }) {
     },
     /**
-     * Hook that gets executed after the suite has ended.
-     * @param {Object} suite suite details
+     * Hook that gets executed after the suite has ended (in Mocha/Jasmine only).
+     * @param {object} suite suite details
      */
     afterSuite: function (suite) {
     },
     /**
      * Gets executed after all tests are done. You still have access to all global variables from
      * the test.
-     * @param {Number} result 0 - test pass, 1 - test fail
+     * @param {number} result 0 - test pass, 1 - test fail
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {Array.<String>} specs List of spec file paths that ran
      */
@@ -398,7 +391,7 @@ exports.config = {
     },
     /**
      * Gets executed right after terminating the webdriver session.
-     * @param {Object} config wdio configuration object
+     * @param {object} config wdio configuration object
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {Array.<String>} specs List of spec file paths that ran
      */
@@ -407,8 +400,8 @@ exports.config = {
     /**
      * Gets executed after all workers have shut down and the process is about to exit.
      * An error thrown in the `onComplete` hook will result in the test run failing.
-     * @param {Object} exitCode 0 - success, 1 - fail
-     * @param {Object} config wdio configuration object
+     * @param {object} exitCode 0 - success, 1 - fail
+     * @param {object} config wdio configuration object
      * @param {Array.<Object>} capabilities list of capabilities details
      * @param {<Object>} results object containing test results
      */
@@ -416,8 +409,8 @@ exports.config = {
     },
     /**
     * Gets executed when a refresh happens.
-    * @param {String} oldSessionId session ID of the old session
-    * @param {String} newSessionId session ID of the new session
+    * @param {string} oldSessionId session ID of the old session
+    * @param {string} newSessionId session ID of the new session
     */
     onReload: function(oldSessionId, newSessionId) {
     },
@@ -425,48 +418,76 @@ exports.config = {
      * Cucumber Hooks
      *
      * Runs before a Cucumber Feature.
-     * @param uri      path to feature file
-     * @param feature  Cucumber feature object
+     * @param {string}                   uri      path to feature file
+     * @param {GherkinDocument.IFeature} feature  Cucumber feature object
      */
     beforeFeature: function (uri, feature) {
     },
     /**
      *
      * Runs before a Cucumber Scenario.
-     * @param world world object containing information on pickle and test step
+     * @param {ITestCaseHookParameter} world    world object containing information on pickle and test step
+     * @param {object}                 context  Cucumber World object
      */
-    beforeScenario: function (world) {
+    beforeScenario: function (world, context) {
     },
     /**
      *
      * Runs before a Cucumber Step.
-     * @param step    step data
-     * @param context Cucumber world
+     * @param {Pickle.IPickleStep} step     step data
+     * @param {IPickle}            scenario scenario pickle
+     * @param {object}             context  Cucumber World object
      */
-    beforeStep: function (step, context) {
+    beforeStep: function (step, scenario, context) {
     },
     /**
      *
      * Runs after a Cucumber Step.
-     * @param step    step data
-     * @param context Cucumber world
+     * @param {Pickle.IPickleStep} step             step data
+     * @param {IPickle}            scenario         scenario pickle
+     * @param {object}             result           results object containing scenario results
+     * @param {boolean}            result.passed    true if scenario has passed
+     * @param {string}             result.error     error stack if scenario failed
+     * @param {number}             result.duration  duration of scenario in milliseconds
+     * @param {object}             context          Cucumber World object
      */
-    afterStep: function (step, context) {
+    afterStep: function (step, scenario, result, context) {
     },
     /**
      *
-     * Runs before a Cucumber Scenario.
-     * @param world world object containing information on pickle and test step
+     * Runs after a Cucumber Scenario.
+     * @param {ITestCaseHookParameter} world            world object containing information on pickle and test step
+     * @param {object}                 result           results object containing scenario results `{passed: boolean, error: string, duration: number}`
+     * @param {boolean}                result.passed    true if scenario has passed
+     * @param {string}                 result.error     error stack if scenario failed
+     * @param {number}                 result.duration  duration of scenario in milliseconds
+     * @param {object}                 context          Cucumber World object
      */
-    afterScenario: function (world) {
+    afterScenario: function (world, result, context) {
     },
     /**
      *
      * Runs after a Cucumber Feature.
-     * @param uri      path to feature file
-     * @param feature  Cucumber feature object
+     * @param {string}                   uri      path to feature file
+     * @param {GherkinDocument.IFeature} feature  Cucumber feature object
      */
     afterFeature: function (uri, feature) {
+    },
+    /**
+     * Runs before a WebdriverIO assertion library makes an assertion.
+     * @param commandName command name
+     * @param args        arguments that command would receive
+     */
+    beforeAssertion: function (params) {
+    },
+    /**
+     * Runs after a WebdriverIO command gets executed
+     * @param commandName  command name
+     * @param args         arguments that command would receive
+     * @param result       result of the command
+     * @param error        error in case something went wrong
+     */
+    afterAssertion: function (params) {
     }
 }
 ```

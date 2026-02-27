@@ -1,11 +1,15 @@
-import chalk from 'chalk'
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
+import chalk, { supportsColor } from 'chalk'
 import logger from '@wdio/logger'
-import type { Options, Capabilities, Workers } from '@wdio/types'
+import { SnapshotManager } from '@vitest/snapshot/manager'
+import type { SnapshotResult } from '@vitest/snapshot'
+import type { Workers } from '@wdio/types'
 
-import { getRunnerName } from './utils'
+import { HookError } from './utils.js'
+import { getRunnerName } from './utils.js'
 
 const log = logger('@wdio/cli')
+const EVENT_FILTER = ['sessionStarted', 'sessionEnded', 'finishedCommand', 'ready', 'workerResponse', 'workerEvent']
 
 interface TestError {
     type: string
@@ -18,12 +22,18 @@ interface CLIInterfaceEvent {
     name: string
     cid?: string
     fullTitle?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     content?: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     params?: any
     error?: TestError
 }
 
 export default class WDIOCLInterface extends EventEmitter {
+    #snapshotManager = new SnapshotManager({
+        updateSnapshot: 'new' // ignored in this context
+    })
+
     public hasAnsiSupport: boolean
     public result = {
         finished: 0,
@@ -39,16 +49,13 @@ export default class WDIOCLInterface extends EventEmitter {
     private _skippedSpecs = 0
     private _inDebugMode = false
     private _start = new Date()
-    private _messages: {
-        reporter: Record<string, string[]>
-        debugger: Record<string, string[]>
-    } = {
-        reporter: {},
-        debugger: {}
+    private _messages = {
+        reporter: {} as Record<string, string[]>,
+        debugger: {} as Record<string, string[]>
     }
 
     constructor(
-        private _config: Options.Testrunner,
+        private _config: WebdriverIO.Config,
         public totalWorkerCnt: number,
         private _isWatchMode = false
     ) {
@@ -59,7 +66,7 @@ export default class WDIOCLInterface extends EventEmitter {
          * `FORCE_COLOR=1` - forcibly enable colors
          * `FORCE_COLOR=0` - forcibly disable colors
          */
-        this.hasAnsiSupport = (chalk.supportsColor as chalk.ColorSupport).hasBasic
+        this.hasAnsiSupport = supportsColor && supportsColor.hasBasic
 
         this.totalWorkerCnt = totalWorkerCnt
         this._isWatchMode = _isWatchMode
@@ -71,6 +78,10 @@ export default class WDIOCLInterface extends EventEmitter {
 
         this.setup()
         this.onStart()
+    }
+
+    #hasShard() {
+        return this._config.shard && this._config.shard.total !== 1
     }
 
     setup() {
@@ -95,41 +106,58 @@ export default class WDIOCLInterface extends EventEmitter {
     }
 
     onStart() {
-        this.log(chalk.bold(`\nExecution of ${chalk.blue(this.totalWorkerCnt)} spec files started at`), this._start.toISOString())
+        const shardNote = this.#hasShard()
+            ? ` (Shard ${this._config.shard!.current} of ${this._config.shard!.total})`
+            : ''
+        this.log(chalk.bold(`\nExecution of ${chalk.blue(this.totalWorkerCnt)} workers${shardNote} started at`), this._start.toISOString())
         if (this._inDebugMode) {
-            this.log(chalk.bgYellow.black('DEBUG mode enabled!'))
+            this.log(chalk.bgYellow(chalk.black('DEBUG mode enabled!')))
         }
         if (this._isWatchMode) {
-            this.log(chalk.bgYellow.black('WATCH mode enabled!'))
+            this.log(chalk.bgYellow(chalk.black('WATCH mode enabled!')))
         }
         this.log('')
     }
 
-    onSpecRunning (rid: string) {
-        this.onJobComplete(rid, this._jobs.get(rid), 0, chalk.bold.cyan('RUNNING'))
+    onSpecRunning(rid: string) {
+        this.onJobComplete(rid, this._jobs.get(rid), 0, chalk.bold(chalk.cyan('RUNNING')))
     }
 
-    onSpecRetry (rid: string, job?: Workers.Job, retries = 0) {
+    onSpecRetry(rid: string, job?: Workers.Job, retries = 0) {
         const delayMsg = this._specFileRetriesDelay > 0 ? ` after ${this._specFileRetriesDelay}s` : ''
         this.onJobComplete(rid, job, retries, chalk.bold(chalk.yellow('RETRYING') + delayMsg))
     }
 
-    onSpecPass (rid: string, job?: Workers.Job, retries = 0) {
-        this.onJobComplete(rid, job, retries, chalk.bold.green('PASSED'))
+    onSpecPass(rid: string, job?: Workers.Job, retries = 0) {
+        this.onJobComplete(rid, job, retries, chalk.bold(chalk.green('PASSED')))
     }
 
-    onSpecFailure (rid: string, job?: Workers.Job, retries = 0) {
-        this.onJobComplete(rid, job, retries, chalk.bold.red('FAILED'))
+    onSpecFailure(rid: string, job?: Workers.Job, retries = 0) {
+        this.onJobComplete(rid, job, retries, chalk.bold(chalk.red('FAILED')))
     }
 
-    onSpecSkip (rid: string, job?: Workers.Job) {
+    onSpecSkip(rid: string, job?: Workers.Job) {
         this.onJobComplete(rid, job, 0, 'SKIPPED', log.info)
     }
 
     onJobComplete(cid: string, job?: Workers.Job, retries = 0, message = '', _logger: Function = this.log) {
         const details = [`[${cid}]`, message]
         if (job) {
-            details.push('in', getRunnerName(job.caps as Capabilities.DesiredCapabilities), this.getFilenames(job.specs))
+            const caps = job.caps
+            const version = caps?.browserVersion || caps?.['appium:platformVersion']
+            const runnerName = getRunnerName(caps)
+
+            if (version) {
+                details.push('in', `${runnerName}(${version})`)
+            } else {
+                details.push('in', runnerName)
+            }
+
+            if (caps?.platformName || caps?.['appium:deviceName']) {
+                details.push('on', (caps?.platformName || caps?.['appium:deviceName']) as string)
+            }
+
+            details.push(this.getFilenames(job.specs))
         }
         if (retries > 0) {
             details.push(`(${retries} retries)`)
@@ -138,7 +166,7 @@ export default class WDIOCLInterface extends EventEmitter {
         return _logger(...details)
     }
 
-    onTestError (payload: CLIInterfaceEvent) {
+    onTestError(payload: CLIInterfaceEvent) {
         const error: TestError = {
             type: payload.error?.type || 'Error',
             message: payload.error?.message || (typeof payload.error === 'string' ? payload.error : 'Unknown error.'),
@@ -148,7 +176,7 @@ export default class WDIOCLInterface extends EventEmitter {
         return this.log(`[${payload.cid}]`, `${chalk.red(error.type)} in "${payload.fullTitle}"\n${chalk.red(error.stack || error.message)}`)
     }
 
-    getFilenames (specs: string[] = []) {
+    getFilenames(specs: string[] = []) {
         if (specs.length > 0) {
             return '- ' + specs.join(', ').replace(new RegExp(`${process.cwd()}`, 'g'), '')
         }
@@ -158,7 +186,7 @@ export default class WDIOCLInterface extends EventEmitter {
     /**
      * add job to interface
      */
-    addJob ({ cid, caps, specs, hasTests }: Workers.Job & { cid: string }) {
+    addJob({ cid, caps, specs, hasTests }: Workers.Job & { cid: string }) {
         this._jobs.set(cid, { caps, specs, hasTests })
         if (hasTests) {
             this.onSpecRunning(cid)
@@ -170,7 +198,7 @@ export default class WDIOCLInterface extends EventEmitter {
     /**
      * clear job from interface
      */
-    clearJob ({ cid, passed, retries }: { cid: string, passed: boolean, retries: number }) {
+    clearJob({ cid, passed, retries }: { cid: string, passed: boolean, retries: number }) {
         const job = this._jobs.get(cid)
 
         this._jobs.delete(cid)
@@ -200,16 +228,26 @@ export default class WDIOCLInterface extends EventEmitter {
     /**
      * for testing purposes call console log in a static method
      */
-    log (...args: any[]) {
-        // eslint-disable-next-line no-console
+    log(...args: unknown[]) {
         console.log(...args)
         return args
+    }
+
+    logHookError(error: Error | HookError) {
+        if (error instanceof HookError) {
+            return this.log(`${chalk.red(error.name)} in "${error.origin}"\n${chalk.red(error.stack || error.message)}`)
+        }
+        return this.log(`${chalk.red(error.name)}: ${chalk.red(error.stack || error.message)}`)
     }
 
     /**
      * event handler that is triggered when runner sends up events
      */
-    onMessage (event: CLIInterfaceEvent) {
+    onMessage(event: CLIInterfaceEvent) {
+        if (event.name === 'reporterRealTime') {
+            this.log(event.content)
+            return
+        }
         if (event.origin === 'debugger' && event.name === 'start') {
             this.log(chalk.yellow(event.params.introMessage))
             this._inDebugMode = true
@@ -225,15 +263,28 @@ export default class WDIOCLInterface extends EventEmitter {
             return this.emit('job:start', event.content)
         }
 
-        if (!event.origin) {
-            return log.warn(`Can't identify message from worker: ${JSON.stringify(event)}, ignoring!`)
+        if (event.name === 'snapshot') {
+            const snapshotResults = event.content as SnapshotResult[]
+            return snapshotResults.forEach((snapshotResult) => {
+                this.#snapshotManager.add(snapshotResult)
+            })
         }
 
-        if (event.origin === 'worker' && event.name === 'error') {
-            return this.log(`[${event.cid}]`, chalk.white.bgRed.bold(' Error: '), event.content.message || event.content.stack || event.content)
+        if (event.name === 'error') {
+            return this.log(
+                `[${event.cid}]`,
+                chalk.white(chalk.bgRed(chalk.bold(' Error: '))),
+                event.content ? (event.content.message || event.content.stack || event.content) : ''
+            )
         }
 
         if (event.origin !== 'reporter' && event.origin !== 'debugger') {
+            /**
+             * filter certain events though
+             */
+            if (EVENT_FILTER.includes(event.name)) {
+                return
+            }
             return this.log(event.cid, event.origin, event.name, event.content)
         }
 
@@ -246,9 +297,6 @@ export default class WDIOCLInterface extends EventEmitter {
         }
 
         this._messages[event.origin][event.name].push(event.content)
-        if (this._isWatchMode) {
-            this.printReporters()
-        }
     }
 
     sigintTrigger() {
@@ -259,7 +307,7 @@ export default class WDIOCLInterface extends EventEmitter {
             return false
         }
 
-        const isRunning = this._jobs.size !== 0
+        const isRunning = this._jobs.size !== 0 || this._isWatchMode
         const shutdownMessage = isRunning
             ? 'Ending WebDriver sessions gracefully ...\n' +
             '(press ctrl+c again to hard kill the runner)'
@@ -274,7 +322,7 @@ export default class WDIOCLInterface extends EventEmitter {
         const reporter = this._messages.reporter
         this._messages.reporter = {}
         for (const [reporterName, messages] of Object.entries(reporter)) {
-            this.log('\n', chalk.bold.magenta(`"${reporterName}" Reporter:`))
+            this.log('\n', chalk.bold(chalk.magenta(`"${reporterName}" Reporter:`)))
             this.log(messages.join(''))
         }
     }
@@ -286,17 +334,38 @@ export default class WDIOCLInterface extends EventEmitter {
         const failed = this.result.failed ? chalk.red(this.result.failed, 'failed') + ', ' : ''
         const skipped = this._skippedSpecs > 0 ? chalk.gray(this._skippedSpecs, 'skipped') + ', ' : ''
         const percentCompleted = totalJobs ? Math.round(this.result.finished / totalJobs * 100) : 0
+
+        const snapshotSummary = this.#snapshotManager.summary
+        const snapshotNotes: string[] = []
+
+        if (snapshotSummary.added > 0) {
+            snapshotNotes.push(chalk.green(`${snapshotSummary.added} snapshot(s) added.`))
+        }
+        if (snapshotSummary.updated > 0) {
+            snapshotNotes.push(chalk.yellow(`${snapshotSummary.updated} snapshot(s) updated.`))
+        }
+        if (snapshotSummary.unmatched > 0) {
+            snapshotNotes.push(chalk.red(`${snapshotSummary.unmatched} snapshot(s) unmatched.`))
+        }
+        if (snapshotSummary.unchecked > 0) {
+            snapshotNotes.push(chalk.gray(`${snapshotSummary.unchecked} snapshot(s) unchecked.`))
+        }
+
+        if (snapshotNotes.length > 0) {
+            this.log('\nSnapshot Summary:')
+            snapshotNotes.forEach((note) => this.log(note))
+        }
+
         return this.log(
             '\nSpec Files:\t', chalk.green(this.result.passed, 'passed') + ', ' + retries + failed + skipped + totalJobs, 'total', `(${percentCompleted}% completed)`, 'in', elapsed,
+            this.#hasShard()
+                ? `\nShard:\t\t ${this._config.shard!.current} / ${this._config.shard!.total}`
+                : '',
             '\n'
         )
     }
 
     finalise() {
-        if (this._isWatchMode) {
-            return
-        }
-
         this.printReporters()
         this.printSummary()
     }

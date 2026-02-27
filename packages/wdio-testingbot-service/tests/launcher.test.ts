@@ -1,13 +1,17 @@
+import path from 'node:path'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import logger from '@wdio/logger'
 import type { Capabilities } from '@wdio/types'
 
-import TestingBotLauncher from '../src/launcher'
-import type { TestingbotOptions } from '../src/types'
+import TestingBotLauncher from '../src/launcher.js'
+import type { TestingbotOptions } from '../src/types.js'
 
+vi.mock('testingbot-tunnel-launcher')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 const log = logger('')
 
 describe('wdio-testingbot-service', () => {
-    const execute = jest.fn()
+    const execute = vi.fn()
 
     afterEach(() => {
         execute.mockReset()
@@ -43,8 +47,14 @@ describe('wdio-testingbot-service', () => {
         const tbLauncher = new TestingBotLauncher(options)
 
         await tbLauncher.onPrepare(config, caps)
-        expect(tbLauncher.tbTunnelOpts).toMatchObject({ apiKey: 'user', apiSecret: 'key', tunnelIdentifier: 'some options' })
-        expect((log.info as jest.Mock).mock.calls[0][0]).toContain('TestingBot tunnel successfully started after')
+        expect(tbLauncher.tbTunnelOpts).toMatchObject({
+            apiKey: 'user',
+            apiSecret: 'key',
+            tunnelIdentifier: 'some options'
+        })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        expect(vi.mocked(log.info).mock.calls[0][0])
+            .toContain('TestingBot tunnel successfully started after')
     })
 
     it('should merge tunnelIdentifier in tb:options', async () => {
@@ -89,7 +99,7 @@ describe('wdio-testingbot-service', () => {
             user: 'user',
             key: 'key'
         }
-        const caps: Capabilities.MultiRemoteCapabilities = {
+        const caps: Capabilities.RequestedMultiremoteCapabilities = {
             browserA: {
                 capabilities: {
                     'tb:options': {
@@ -128,6 +138,90 @@ describe('wdio-testingbot-service', () => {
         })
     })
 
+    it('should merge tunnelIdentifier in tb:options in parallel multiremote', async () => {
+        const options: TestingbotOptions = {
+            tbTunnel: true,
+            tbTunnelOpts: {
+                apiKey: 'user',
+                apiSecret: 'key',
+                tunnelIdentifier: 'my-tunnel'
+            }
+        }
+        const config: any = {
+            user: 'user',
+            key: 'key'
+        }
+        const caps: Capabilities.RequestedMultiremoteCapabilities[] = [{
+            browserA: {
+                capabilities: {
+                    'tb:options': {
+                        build: 'unit-test',
+                    }
+                }
+            } as any,
+            browserB: {
+                capabilities: {
+                    'tb:options': {
+                        build: 'other-unit-test',
+                    }
+                }
+            } as any
+        }, {
+            browserC: {
+                capabilities: {
+                    'tb:options': {
+                        build: 'unit-test',
+                    }
+                }
+            } as any,
+            browserD: {
+                capabilities: {
+                    'tb:options': {
+                        build: 'other-unit-test',
+                    }
+                }
+            } as any
+        }]
+        const tbLauncher = new TestingBotLauncher(options)
+
+        await tbLauncher.onPrepare(config, caps as any)
+        expect(caps).toEqual([{
+            browserA: {
+                capabilities: {
+                    'tb:options': {
+                        'tunnel-identifier': 'my-tunnel',
+                        build: 'unit-test',
+                    }
+                }
+            },
+            browserB: {
+                capabilities: {
+                    'tb:options': {
+                        'tunnel-identifier': 'my-tunnel',
+                        build: 'other-unit-test',
+                    }
+                }
+            }
+        }, {
+            browserC: {
+                capabilities: {
+                    'tb:options': {
+                        'tunnel-identifier': 'my-tunnel',
+                        build: 'unit-test',
+                    }
+                }
+            },
+            browserD: {
+                capabilities: {
+                    'tb:options': {
+                        'tunnel-identifier': 'my-tunnel',
+                        build: 'other-unit-test',
+                    }
+                }
+            }
+        }])
+    })
+
     it('should add tunnelIdentifier in tb:options', async () => {
         const options: TestingbotOptions = {
             tbTunnel: true,
@@ -164,7 +258,7 @@ describe('wdio-testingbot-service', () => {
             user: 'user',
             key: 'key'
         }
-        const caps: Capabilities.MultiRemoteCapabilities = {
+        const caps: Capabilities.RequestedMultiremoteCapabilities = {
             browserA: {
                 capabilities: {}
             },
@@ -179,8 +273,10 @@ describe('wdio-testingbot-service', () => {
         const tbLauncher = new TestingBotLauncher(options)
 
         await tbLauncher.onPrepare(config, caps as any)
-        expect(Object.keys((caps.browserA.capabilities as Capabilities.DesiredCapabilities)['tb:options'] as any)).toContain('tunnel-identifier')
-        expect(Object.keys((caps.browserB.capabilities as Capabilities.DesiredCapabilities)['tb:options'] as any)).toContain('build')
+        expect(Object.keys((caps.browserA.capabilities as WebdriverIO.Capabilities)['tb:options'] as any))
+            .toContain('tunnel-identifier')
+        expect(Object.keys((caps.browserB.capabilities as WebdriverIO.Capabilities)['tb:options'] as any))
+            .toContain('build')
     })
 
     it('onComplete', () => {

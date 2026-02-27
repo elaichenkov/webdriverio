@@ -1,45 +1,70 @@
-import { Browser } from 'webdriverio'
-import { BrowserExtension } from './index'
-import { readFile, getPidPath } from './utils'
-import { getValue, setValue, setPort } from './client'
+import type { JsonCompatible, JsonPrimitive, Services, JsonArray, Capabilities } from '@wdio/types'
 
-import type { JsonCompatible, JsonPrimitive, Services } from '@wdio/types'
-
-/**
- * ToDo(Christian): make this public accessible
- */
-interface ServiceBrowser extends Browser<'async'>, BrowserExtension { }
+import { getValue, setValue, setPort, setResourcePool, getValueFromPool, addValueToPool } from './client.js'
+import { CUSTOM_CAP } from './constants.js'
+import type { SharedStoreServiceCapabilities } from './types.js'
+import type { GetValueOptions } from './types.js'
 
 export default class SharedStoreService implements Services.ServiceInstance {
-    private _browser?: ServiceBrowser
+    private _browser?: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser
 
-    async beforeSession () {
-        /**
-         * get port from parent's pid file saved in `onPrepare` hook
-         */
-        const port = await readFile(getPidPath(process.ppid))
+    constructor(_: never, caps: Capabilities.ResolvedTestrunnerCapabilities) {
+        const port = (
+            (caps as SharedStoreServiceCapabilities)[CUSTOM_CAP] ||
+            ((caps as Capabilities.W3CCapabilities).alwaysMatch as SharedStoreServiceCapabilities)?.[CUSTOM_CAP] ||
+            (Object.values(caps as Capabilities.ResolvedTestrunnerCapabilities)[0]?.capabilities as SharedStoreServiceCapabilities)[CUSTOM_CAP]
+        )
 
-        setPort(port.toString())
+        if (!port) {
+            throw new Error('SharedStoreService: port not found in capabilities')
+        }
+
+        setPort(port)
     }
 
     before (
-        caps: unknown,
-        specs: unknown,
-        browser: ServiceBrowser
+        caps: never,
+        specs: never,
+        _browser: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser
     ) {
-        this._browser = browser
+        this._browser = _browser
         const sharedStore = Object.create({}, {
             get: {
-                value: (key: string) => this._browser?.call(() => getValue(key))
+                value: (key: string) => getValue(key)
             },
             set: {
                 value: (
                     key: string,
                     value: JsonCompatible | JsonPrimitive
-                ) => this._browser?.call(() => setValue(key, value))
+                ) => setValue(key, value)
+            },
+            setResourcePool: {
+                value: (
+                    key: string,
+                    value: JsonArray
+                ) => setResourcePool(key, value)
+            },
+            getValueFromPool: {
+                value: (
+                    key: string,
+                    options: GetValueOptions
+                ) => getValueFromPool(key, options)
+            },
+            addValueToPool: {
+                value: (
+                    key: string,
+                    value: JsonCompatible | JsonPrimitive
+                ) => addValueToPool(key, value)
             }
         })
 
         this._browser.sharedStore = sharedStore
+        const browser = this._browser as WebdriverIO.MultiRemoteBrowser
+        if (!this._browser.capabilities && browser.instances) {
+
+            browser.instances.forEach((browserName) => {
+                browser.getInstance(browserName).sharedStore = sharedStore
+            })
+        }
     }
 }

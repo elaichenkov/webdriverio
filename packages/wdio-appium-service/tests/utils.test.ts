@@ -1,5 +1,6 @@
-import { getFilePath, formatCliArgs } from '../src/utils'
-import path from 'path'
+import path from 'node:path'
+import { describe, expect, beforeAll, test } from 'vitest'
+import { getFilePath, formatCliArgs } from '../src/utils.js'
 
 describe('getFilePath', () => {
     let basePath: string
@@ -169,10 +170,13 @@ describe('argument formatting', () => {
         expect(args.length).toBe(7)
     })
 
-    test('should coerce arguments to string if array is passed', () => {
-        const argsArray = ['-p', 4723]
-        const args = formatCliArgs(argsArray)
+    test('it should not format certain other arguments', () => {
+        const args = formatCliArgs({
+            allowInsecure: true,
+            chromedriver_autodownload: true,
+        })
 
-        expect(args).toEqual(['-p', '4723'])
+        expect(args[0]).toBe('--allow-insecure')
+        expect(args[1]).toBe('chromedriver_autodownload')
     })
 })

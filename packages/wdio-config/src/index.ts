@@ -1,21 +1,21 @@
 /* istanbul ignore file */
 
-import ConfigParser from './lib/ConfigParser'
-import { validateConfig, isCloudCapability, ModuleRequireService } from './utils'
-import { DEFAULT_CONFIGS } from './constants'
+import { DEFAULT_CONFIGS, DEFAULT_MAX_INSTANCES_PER_CAPABILITY_VALUE } from './constants.js'
+import { defineConfig, validateConfig, isCloudCapability } from './utils.js'
 
 export {
+    /**
+     * configuration helpers
+     */
     validateConfig,
+    defineConfig,
     isCloudCapability,
-    ConfigParser,
 
     /**
      * constants
      */
     DEFAULT_CONFIGS,
-
-    /**
-     * types
-     */
-    ModuleRequireService
+    DEFAULT_MAX_INSTANCES_PER_CAPABILITY_VALUE
 }
+
+export * from './types.js'

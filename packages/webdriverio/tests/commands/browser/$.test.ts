@@ -1,7 +1,11 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import got from 'got'
-import { remote } from '../../../src'
-import { ELEMENT_KEY } from '../../../src/constants'
+import path from 'node:path'
+
+import { ELEMENT_KEY } from 'webdriver'
+import { describe, it, afterEach, expect, vi } from 'vitest'
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('element', () => {
     it('should fetch an element', async () => {
@@ -13,35 +17,24 @@ describe('element', () => {
         })
 
         const elem = await browser.$('#foo')
-        expect(got.mock.calls[1][1].method)
+        expect(elem).toBe(await elem.getElement())
+        expect(vi.mocked(fetch).mock.calls[1][1]!.method)
             .toBe('POST')
-        expect(got.mock.calls[1][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[1][0]!.pathname)
             .toBe('/session/foobar-123/element')
-        expect(got.mock.calls[1][1].json)
-            .toEqual({ using: 'css selector', value: '#foo' })
+        expect(vi.mocked(fetch).mock.calls[1][1]!.body)
+            .toEqual(JSON.stringify({ using: 'css selector', value: '#foo' }))
         expect(elem.elementId).toBe('some-elem-123')
         expect(elem[ELEMENT_KEY]).toBe('some-elem-123')
         expect(elem.ELEMENT).toBe(undefined)
-    })
-
-    it('should fetch an element (no w3c)', async () => {
-        const browser = await remote({
-            baseUrl: 'http://foobar.com',
-            capabilities: {
-                browserName: 'foobar-noW3C'
-            }
-        })
-
-        const elem = await browser.$('#foo')
-        expect(elem[ELEMENT_KEY]).toBe(undefined)
-        expect(elem.ELEMENT).toBe('some-elem-123')
     })
 
     it('should allow to transform protocol reference into a WebdriverIO element', async () => {
         const browser = await remote({
             baseUrl: 'http://foobar.com',
             capabilities: {
-                browserName: 'foobar-noW3C'
+                browserName: 'foobar'
             }
         })
 
@@ -57,7 +50,7 @@ describe('element', () => {
                 // @ts-ignore mock feature
                 mobileMode: true,
                 'appium-version': '1.9.2'
-            }
+            } as any
         })
 
         expect(browser.isMobile).toBe(true)
@@ -66,6 +59,6 @@ describe('element', () => {
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
-})
+})!

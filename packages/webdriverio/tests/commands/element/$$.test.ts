@@ -1,9 +1,11 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
-import { ELEMENT_KEY } from '../../../src/constants'
+import path from 'node:path'
+import { ELEMENT_KEY } from 'webdriver'
+import { expect, describe, it, afterEach, vi } from 'vitest'
 
-const got = gotMock as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('element', () => {
     it('should fetch an element', async () => {
@@ -16,17 +18,19 @@ describe('element', () => {
 
         const elem = await browser.$('#foo')
         const elems = await elem.$$('#subfoo')
-        expect(got.mock.calls[1][1].method).toBe('POST')
-        expect(got.mock.calls[1][0].pathname)
+        expect(vi.mocked(fetch).mock.calls[1][1]!.method).toBe('POST')
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[1][0]!.pathname)
             .toBe('/session/foobar-123/element')
-        expect(got.mock.calls[1][1].json)
-            .toEqual({ using: 'css selector', value: '#foo' })
+        expect(vi.mocked(fetch).mock.calls[1][1]!.body)
+            .toEqual(JSON.stringify({ using: 'css selector', value: '#foo' }))
         expect(elem.elementId).toBe('some-elem-123')
-        expect(got.mock.calls[2][1].method).toBe('POST')
-        expect(got.mock.calls[2][0].pathname)
+        expect(vi.mocked(fetch).mock.calls[2][1]!.method).toBe('POST')
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/elements')
-        expect(got.mock.calls[2][1].json)
-            .toEqual({ using: 'css selector', value: '#subfoo' })
+        expect(vi.mocked(fetch).mock.calls[2][1]!.body)
+            .toEqual(JSON.stringify({ using: 'css selector', value: '#subfoo' }))
         expect(elems).toHaveLength(3)
 
         expect(elems[0].elementId).toBe('some-sub-elem-321')
@@ -46,25 +50,6 @@ describe('element', () => {
         expect(elems[2].index).toBe(2)
     })
 
-    it('should fetch an element (no w3c)', async () => {
-        const browser = await remote({
-            baseUrl: 'http://foobar.com',
-            capabilities: {
-                browserName: 'foobar-noW3C'
-            }
-        })
-
-        const elem = await browser.$('#foo')
-        const elems = await elem.$$('#subfoo')
-        expect(elems).toHaveLength(3)
-        expect(elems[0][ELEMENT_KEY]).toBe(undefined)
-        expect(elems[0].ELEMENT).toBe('some-sub-elem-321')
-        expect(elems[1][ELEMENT_KEY]).toBe(undefined)
-        expect(elems[1].ELEMENT).toBe('some-elem-456')
-        expect(elems[2][ELEMENT_KEY]).toBe(undefined)
-        expect(elems[2].ELEMENT).toBe('some-elem-789')
-    })
-
     it('keeps prototype from browser object', async () => {
         const browser = await remote({
             baseUrl: 'http://foobar.com',
@@ -73,7 +58,7 @@ describe('element', () => {
                 // @ts-ignore mock feature
                 mobileMode: true,
                 'appium-version': '1.9.2'
-            }
+            } as any
         })
 
         const elem = await browser.$('#foo')
@@ -83,7 +68,53 @@ describe('element', () => {
         expect(elems[2].isMobile).toBe(true)
     })
 
+    it('should be able to use entries', async () => {
+        const browser = await remote({
+            baseUrl: 'http://foobar.com',
+            capabilities: {
+                browserName: 'foobar'
+            }
+        })
+
+        const elem = await browser.$('#foo')
+        const elems = await elem.$$('.foo')
+        const entries = []
+        for await (const entry of elems.entries()) {
+            const [index, element] = entry
+            entries.push([
+                index,
+                {
+                    elementId: element.elementId,
+                    [ELEMENT_KEY]: element[ELEMENT_KEY],
+                    selector: element.selector,
+                    index: element.index
+                }
+            ])
+        }
+
+        expect(entries).toStrictEqual([
+            [0, {
+                [ELEMENT_KEY]: 'some-sub-elem-321',
+                selector: '.foo',
+                index: 0,
+                elementId: 'some-sub-elem-321'
+            }],
+            [1, {
+                [ELEMENT_KEY]: 'some-elem-456',
+                selector: '.foo',
+                index: 1,
+                elementId: 'some-elem-456'
+            }],
+            [2, {
+                [ELEMENT_KEY]: 'some-elem-789',
+                selector: '.foo',
+                index: 2,
+                elementId: 'some-elem-789'
+            }]
+        ])
+    })
+
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

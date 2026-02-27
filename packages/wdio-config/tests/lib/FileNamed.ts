@@ -1,5 +1,6 @@
-import { MockSystemFilePath } from './MockPathService'
-import MockFileContentBuilder, { FilePathAndContent, MockFileContent } from './MockFileContentBuilder'
+import type { MockSystemFilePath } from './MockPathService.js'
+import type { FilePathAndContent, MockFileContent } from './MockFileContentBuilder.js'
+import MockFileContentBuilder from './MockFileContentBuilder.js'
 
 /**
  * Builder for a virtual file system file
@@ -15,15 +16,18 @@ export function FileNamed(filename: MockSystemFilePath) {
     return { withContents }
 }
 
-export type RealSystemPath = string;
+export type RealSystemPath = string
 
 /**
  * Mock a real config file by loading it in from the file system.
  *
  * @param f
  */
-export function realRequiredFilePair(f: RealSystemPath) : FilePathAndContent {
-    return FileNamed(f).withContents(MockFileContentBuilder.FromRealConfigFile(f).build())
+export async function realRequiredFilePair(f: RealSystemPath) : Promise<FilePathAndContent> {
+    return FileNamed(f)
+        .withContents(
+            (await MockFileContentBuilder.FromRealConfigFile(f)).build()
+        )
 }
 
 /**

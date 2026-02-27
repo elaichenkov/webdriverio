@@ -5,5 +5,15 @@ const config: WebdriverIO.Config = {
         random: 'test wrong parameter',
         stopOnSpecFailure: true
     },
-    capabilities: {}
+    capabilities: [{}]
 }
+
+/**
+ * check compatibility with WebdriverIO assertion lib
+ */
+expect($('foo')).toHaveText('foobar')
+/**
+ * check support for Jasmine specific matchers
+ */
+// @ts-ignore ToDo(@christian-bromann): fix typings
+expect(true).toBeTrue()

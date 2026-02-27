@@ -6,15 +6,22 @@ import type { Timeouts } from '@wdio/protocols'
  * behaviour as timeouts on script injection, document navigation, and element retrieval.
  * For more information and examples, see [timeouts guide](https://webdriver.io/docs/timeouts#selenium-timeouts).
  *
+ * :::info
+ *
+ * It is not recommended to set `implicit` timeouts as they impact WebdriverIO's behavior
+ * and can cause errors in certain commands, e.g. `waitForExist` with reverse flag.
+ *
+ * :::
+ *
  * <example>
     :setTimeout.js
-    it('should change timeout duration for session with long code duration', () => {
-        browser.setTimeout({
+    it('should change timeout duration for session with long code duration', async () => {
+        await browser.setTimeout({
             'pageLoad': 10000,
             'script': 60000
         });
         // Execute code which takes a long time
-        browser.executeAsync((done) => {
+        await browser.executeAsync((done) => {
             console.log('Wake me up before you go!');
             setTimeout(done, 59000);
         });
@@ -29,7 +36,7 @@ import type { Timeouts } from '@wdio/protocols'
  *
  */
 
-export default async function setTimeout(
+export async function setTimeout(
     this: WebdriverIO.Browser,
     timeouts: Partial<Timeouts>
 ): Promise<void> {
@@ -48,21 +55,9 @@ export default async function setTimeout(
 
     const implicit = timeouts.implicit as number
     // Previously also known as `page load` with JsonWireProtocol
-    const pageLoad = (timeouts as any)['page load'] || timeouts.pageLoad
+    const pageLoad = (timeouts as unknown as { 'page load': number })['page load'] || timeouts.pageLoad
     const script = timeouts.script as number
-    const setTimeouts: any = this.setTimeouts.bind(this)
-
-    /**
-     * JsonWireProtocol action
-     */
-    if (!this.isW3C) {
-        await Promise.all([
-            isFinite(implicit) && setTimeouts('implicit', implicit),
-            isFinite(pageLoad) && setTimeouts('page load', pageLoad),
-            isFinite(script) && setTimeouts('script', script),
-        ].filter(Boolean))
-        return
-    }
+    const setTimeouts = this.setTimeouts.bind(this)
 
     return setTimeouts(implicit, pageLoad, script)
 }

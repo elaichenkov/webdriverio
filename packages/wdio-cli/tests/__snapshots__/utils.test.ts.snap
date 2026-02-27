@@ -1,8 +1,21 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`getCapabilities should return driver with capabilities for android 1`] = `
-Object {
-  "capabilities": Object {
+exports[`getCapabilities > should get capability from wdio.conf.js 1`] = `
+{
+  "capabilities": {
+    "browserName": "chrome",
+    "goog:chromeOptions": {
+      "args": [
+        "window-size=8000,1200",
+      ],
+    },
+  },
+}
+`;
+
+exports[`getCapabilities > should return driver with capabilities for android 1`] = `
+{
+  "capabilities": {
     "app": "foo.apk",
     "automationName": "UiAutomator2",
     "deviceName": "Test",
@@ -13,9 +26,9 @@ Object {
 }
 `;
 
-exports[`getCapabilities should return driver with capabilities for android 2`] = `
-Object {
-  "capabilities": Object {
+exports[`getCapabilities > should return driver with capabilities for android 2`] = `
+{
+  "capabilities": {
     "automationName": "UiAutomator2",
     "browserName": "Chrome",
     "deviceName": "Test",
@@ -26,17 +39,17 @@ Object {
 }
 `;
 
-exports[`getCapabilities should return driver with capabilities for desktop 1`] = `
-Object {
-  "capabilities": Object {
+exports[`getCapabilities > should return driver with capabilities for desktop 1`] = `
+{
+  "capabilities": {
     "browserName": "chrome",
   },
 }
 `;
 
-exports[`getCapabilities should return driver with capabilities for ios 1`] = `
-Object {
-  "capabilities": Object {
+exports[`getCapabilities > should return driver with capabilities for ios 1`] = `
+{
+  "capabilities": {
     "app": "foo.app",
     "automationName": "XCUITest",
     "deviceName": "fooName",
@@ -47,9 +60,9 @@ Object {
 }
 `;
 
-exports[`getCapabilities should return driver with capabilities for ios 2`] = `
-Object {
-  "capabilities": Object {
+exports[`getCapabilities > should return driver with capabilities for ios 2`] = `
+{
+  "capabilities": {
     "automationName": "XCUITest",
     "browserName": "Safari",
     "deviceName": "iPhone Simulator",
@@ -59,3 +72,19 @@ Object {
   },
 }
 `;
+
+exports[`getCapabilities > should return driver with capabilities for multiremote config 1`] = `
+{
+  "capabilities": {
+    "browserName": "chrome",
+  },
+}
+`;
+
+exports[`getCapabilities > should through capability not found 1`] = `[Error: No capability found in given config file with the provided capability indexed/named property: 5. Please check the capability in your wdio config file.]`;
+
+exports[`getCapabilities > should throw capability not provided 1`] = `[Error: Please provide index/named property of capability to use from the capabilities array/object in wdio config file]`;
+
+exports[`getCapabilities > should throw config not found error 1`] = `[Error: Config File not found: ./test.js]`;
+
+exports[`getCapabilities > should throw config not found error 2`] = `[Error: Could not parse ./test.js, failed with error: ups]`;

@@ -1,8 +1,18 @@
-import { Options } from '@wdio/types'
+import path from 'node:path'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import type { Capabilities, Options } from '@wdio/types'
+
+import '../src/browser.js'
+
 import {
     isSuccessfulResponse, getPrototype, getSessionError,
-    getErrorFromResponseBody, CustomRequestError, startWebDriverSession
-} from '../src/utils'
+    startWebDriverSession, setupDirectConnect, validateCapabilities
+} from '../src/utils.js'
+import type { Client, RemoteConfig } from '../src/types.js'
+
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+vi.mock('@wdio/utils')
+vi.mock('fetch')
 
 describe('utils', () => {
     it('isSuccessfulResponse', () => {
@@ -26,24 +36,15 @@ describe('utils', () => {
     })
 
     it('getPrototype', () => {
-        const isW3C = false
-        const isChrome = false
+        const isChromium = false
         const isMobile = false
         const isSauce = false
         const isIOS = false
         const isAndroid = false
         const isSeleniumStandalone = false
 
-        const jsonWireProtocolPrototype = getPrototype({
-            isW3C, isChrome, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
-        })
-        expect(jsonWireProtocolPrototype instanceof Object).toBe(true)
-        expect(typeof jsonWireProtocolPrototype.sendKeys.value).toBe('function')
-        expect(typeof jsonWireProtocolPrototype.sendCommand).toBe('undefined')
-        expect(typeof jsonWireProtocolPrototype.lock).toBe('undefined')
-
         const webdriverPrototype = getPrototype({
-            isW3C: true, isChrome, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
+            isW3C: true, isChromium, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
         })
         expect(webdriverPrototype instanceof Object).toBe(true)
         expect(typeof webdriverPrototype.sendKeys).toBe('undefined')
@@ -52,7 +53,7 @@ describe('utils', () => {
         expect(typeof webdriverPrototype.lock).toBe('undefined')
 
         const chromiumPrototype = getPrototype({
-            isW3C: false, isChrome: true, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
+            isW3C: false, isChromium: true, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
         })
         expect(chromiumPrototype instanceof Object).toBe(true)
         expect(typeof chromiumPrototype.sendCommand.value).toBe('function')
@@ -60,8 +61,17 @@ describe('utils', () => {
         expect(typeof chromiumPrototype.elementSendKeys.value).toBe('function')
         expect(typeof chromiumPrototype.lock).toBe('undefined')
 
+        const geckoPrototype = getPrototype({
+            isW3C: true, isChromium: false, isFirefox: true, isMobile, isSauce, isSeleniumStandalone, isIOS, isAndroid
+        })
+        expect(geckoPrototype instanceof Object).toBe(true)
+        expect(typeof geckoPrototype.setMozContext.value).toBe('function')
+        expect(typeof geckoPrototype.installAddOn.value).toBe('function')
+        expect(typeof geckoPrototype.elementSendKeys.value).toBe('function')
+        expect(typeof geckoPrototype.lock).toBe('undefined')
+
         const mobilePrototype = getPrototype({
-            isW3C: true, isChrome: false, isMobile: true, isSauce, isSeleniumStandalone, isIOS, isAndroid
+            isW3C: true, isChromium: false, isMobile: true, isSauce, isSeleniumStandalone, isIOS, isAndroid
         })
         expect(mobilePrototype instanceof Object).toBe(true)
         expect(typeof mobilePrototype.performActions.value).toBe('function')
@@ -70,7 +80,7 @@ describe('utils', () => {
         expect(typeof mobilePrototype.getNetworkConnection.value).toBe('function')
 
         const mobileChromePrototype = getPrototype({
-            isW3C: true, isChrome: true, isMobile: true, isSauce, isSeleniumStandalone, isIOS, isAndroid
+            isW3C: true, isChromium: true, isMobile: true, isSauce, isSeleniumStandalone, isIOS, isAndroid
         })
         expect(mobileChromePrototype instanceof Object).toBe(true)
         expect(typeof mobileChromePrototype.sendCommand.value).toBe('function')
@@ -80,62 +90,79 @@ describe('utils', () => {
         expect(typeof mobileChromePrototype.getNetworkConnection.value).toBe('function')
 
         const saucePrototype = getPrototype({
-            isW3C: true, isChrome, isMobile, isSauce: true, isSeleniumStandalone, isIOS, isAndroid
+            isW3C: true, isChromium, isMobile, isSauce: true, isSeleniumStandalone, isIOS, isAndroid
         })
         expect(saucePrototype instanceof Object).toBe(true)
         expect(typeof saucePrototype.getPageLogs.value).toBe('function')
     })
 
-    it('getErrorFromResponseBody', () => {
-        const emptyBodyError = new Error('Response has empty body')
-        expect(getErrorFromResponseBody('')).toEqual(emptyBodyError)
-        expect(getErrorFromResponseBody(null)).toEqual(emptyBodyError)
+    describe('setupDirectConnect', () => {
+        class TestClient implements Client {
+            // @ts-expect-error
+            sessionId?: string
+            // @ts-expect-error
+            requestedCapabilities?: WebdriverIO.Capabilities | Capabilities.W3CCapabilities
 
-        const unknownError = new Error('unknown error')
-        expect(getErrorFromResponseBody({})).toEqual(unknownError)
-
-        const expectedError = new Error('expected')
-        expect(getErrorFromResponseBody('expected')).toEqual(expectedError)
-        expect(getErrorFromResponseBody({ value: { message: 'expected' } }))
-            .toEqual(expectedError)
-        expect(getErrorFromResponseBody({ value: { class: 'expected' } }))
-            .toEqual(expectedError)
-
-        const ieError = new Error('Command not found: POST /some/command')
-        ieError.name = 'unknown method'
-        expect(getErrorFromResponseBody({
-            message: 'Command not found: POST /some/command',
-            error: 'unknown method'
-        })).toEqual(ieError)
-    })
-
-    it('CustomRequestError', function () {
-        //Firefox
-        let error = new CustomRequestError({
-            value: {
-                error: 'foo',
-                message: 'bar'
+            constructor(
+                public capabilities: WebdriverIO.Capabilities | Capabilities.W3CCapabilities,
+                public options: Options.WebDriver
+            ) {
+                this.capabilities = capabilities
+                this.options = options
             }
+        }
+
+        it('should do nothing if params contain no direct connect caps', function () {
+            const client = new TestClient({ platformName: 'baz' }, { hostname: 'bar' } as any) as Client
+            setupDirectConnect(client)
+            expect(client.options.hostname).toEqual('bar')
         })
-        expect(error.name).toBe('foo')
-        expect(error.message).toBe('bar')
 
-        //Chrome
-        error = new CustomRequestError({ value: { message: 'stale element reference' } })
-        expect(error.name).toBe('stale element reference')
-        expect(error.message).toBe('stale element reference')
+        it('should do nothing if params contain incomplete direct connect caps', function () {
+            const client = new TestClient({ platformName: 'baz', 'appium:directConnectHost': 'baz' }, { hostname: 'bar' } as any) as Client
+            setupDirectConnect(client)
+            expect(client.options.hostname).toEqual('bar')
+        })
 
-        error = new CustomRequestError({ value: { message: 'message' } } )
-        expect(error.name).toBe('Error')
-        expect(error.message).toBe('message')
+        it('should update connection params if caps contain all direct connect fields', function () {
+            const client = new TestClient({
+                platformName: 'baz',
+                'appium:directConnectProtocol': 'https',
+                'appium:directConnectHost': 'bar',
+                'appium:directConnectPort': 4321,
+                'appium:directConnectPath': '/'
+            }, {
+                protocol: 'http',
+                hostname: 'foo',
+                port: 1234,
+                path: ''
+            } as any) as Client
+            setupDirectConnect(client)
+            expect(client.options.protocol).toBe('https')
+            expect(client.options.hostname).toBe('bar')
+            expect(client.options.port).toBe(4321)
+            expect(client.options.path).toBe('/')
+        })
 
-        error = new CustomRequestError({ value: { class: 'class' } } )
-        expect(error.name).toBe('Error')
-        expect(error.message).toBe('class')
-
-        error = new CustomRequestError({ value: { } } )
-        expect(error.name).toBe('Error')
-        expect(error.message).toBe('unknown error')
+        it('should update connection params even if path is empty string', function () {
+            const client = new TestClient({
+                platformName: 'baz',
+                'appium:directConnectProtocol': 'https',
+                'appium:directConnectHost': 'bar',
+                'appium:directConnectPort': 4321,
+                'appium:directConnectPath': ''
+            }, {
+                protocol: 'http',
+                hostname: 'foo',
+                port: 1234,
+                path: ''
+            } as any) as Client
+            setupDirectConnect(client)
+            expect(client.options.protocol).toBe('https')
+            expect(client.options.hostname).toBe('bar')
+            expect(client.options.port).toBe(4321)
+            expect(client.options.path).toBe('')
+        })
     })
 
     describe('getSessionError', () => {
@@ -207,8 +234,14 @@ describe('utils', () => {
     })
 
     describe('startWebDriverSession', () => {
+        const mockedFetch = vi.mocked(fetch)
+
+        afterEach(() => {
+            mockedFetch.mockClear()
+        })
+
         it('attaches capabilities to the params object', async () => {
-            const params: Options.WebDriver = {
+            const params: RemoteConfig = {
                 hostname: 'localhost',
                 port: 4444,
                 path: '/',
@@ -216,6 +249,7 @@ describe('utils', () => {
                 logLevel: 'warn',
                 capabilities: {
                     browserName: 'chrome',
+                    // @ts-expect-error test invalid cap
                     platform: 'Windows'
                 }
             }
@@ -223,18 +257,85 @@ describe('utils', () => {
             expect(sessionId).toBe('foobar-123')
             expect(capabilities.browserName)
                 .toBe('mockBrowser')
+            expect(JSON.parse(mockedFetch.mock.calls[0][1]?.body as string).capabilities.alwaysMatch.webSocketUrl)
+                .toBe(true)
+        })
+
+        it('should allow to opt-out from bidi', async () => {
+            const params: RemoteConfig = {
+                hostname: 'localhost',
+                port: 4444,
+                path: '/',
+                protocol: 'http',
+                capabilities: {
+                    browserName: 'chrome',
+                    'wdio:enforceWebDriverClassic': true
+                }
+            }
+            await startWebDriverSession(params)
+            expect(JSON.parse(mockedFetch.mock.calls[0][1]?.body as string).capabilities.alwaysMatch.webSocketUrl)
+                .toBe(undefined)
+        })
+
+        it('should not opt-in for Safari as it is not supported', async () => {
+            const params: RemoteConfig = {
+                hostname: 'localhost',
+                port: 4444,
+                path: '/',
+                protocol: 'http',
+                capabilities: {
+                    browserName: 'safari'
+                }
+            }
+            await startWebDriverSession(params)
+            expect(JSON.parse(mockedFetch.mock.calls[0][1]?.body as string).capabilities.alwaysMatch.webSocketUrl)
+                .toBe(undefined)
+        })
+
+        it('should not opt-in for Safari as it is not supported', async () => {
+            const params: RemoteConfig = {
+                hostname: 'localhost',
+                port: 4444,
+                path: '/',
+                protocol: 'http',
+                capabilities: {
+                    browserName: 'Safari'
+                }
+            }
+            await startWebDriverSession(params)
+            expect(JSON.parse(mockedFetch.mock.calls[0][1]?.body as string).capabilities.alwaysMatch.webSocketUrl)
+                .toBe(undefined)
+        })
+
+        it('should allow to opt-out from bidi when using alwaysMatch', async () => {
+            const params: RemoteConfig = {
+                hostname: 'localhost',
+                port: 4444,
+                path: '/',
+                protocol: 'http',
+                capabilities: {
+                    alwaysMatch: {
+                        browserName: 'chrome',
+                        'wdio:enforceWebDriverClassic': true
+                    },
+                    firstMatch: []
+                }
+            }
+            await startWebDriverSession(params)
+            expect(JSON.parse(mockedFetch.mock.calls[0][1]?.body as string).capabilities.alwaysMatch.webSocketUrl)
+                .toBe(undefined)
         })
 
         it('should handle sessionRequest error', async () => {
-            let error = await startWebDriverSession({
+            const error = await startWebDriverSession({
                 logLevel: 'warn',
                 capabilities: {}
             }).catch((err) => err)
-            expect(error.message).toContain('Failed to create session')
+            expect(error.message).toContain('Invalid URL')
         })
 
         it('should break if JSONWire and WebDriver caps are mixed together', async () => {
-            const params: Options.WebDriver = {
+            const params: RemoteConfig = {
                 hostname: 'localhost',
                 port: 4444,
                 path: '/',
@@ -243,6 +344,7 @@ describe('utils', () => {
                 capabilities: {
                     browserName: 'chrome',
                     'sauce:options': {},
+                    // @ts-expect-error test invalid cap
                     platform: 'Windows',
                     // @ts-ignore test invalid cap
                     foo: 'bar'
@@ -253,6 +355,332 @@ describe('utils', () => {
                 'Invalid or unsupported WebDriver capabilities found ' +
                 '("platform", "foo").'
             )
+        })
+
+        describe('overlapping capabilities normalization', () => {
+            it('should remove duplicate keys from firstMatch when they match alwaysMatch', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            // @ts-expect-error test vendor cap
+                            'requester:project-id': 'my-project',
+                            'requester:project-branch-id': 'main'
+                        },
+                        firstMatch: [
+                            {
+                                browserName: 'chrome',
+                                // @ts-expect-error test vendor cap
+                                'requester:project-id': 'my-project',
+                                'requester:project-branch-id': 'main'
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+                const am = payload.capabilities.alwaysMatch
+                const fm0 = payload.capabilities.firstMatch[0]
+
+                // Keys should remain in alwaysMatch
+                expect(am.browserName).toBe('chrome')
+                expect(am['requester:project-id']).toBe('my-project')
+                expect(am['requester:project-branch-id']).toBe('main')
+
+                // Keys should be removed from firstMatch to avoid overlap
+                expect(fm0.browserName).toBeUndefined()
+                expect(fm0['requester:project-id']).toBeUndefined()
+                expect(fm0['requester:project-branch-id']).toBeUndefined()
+            })
+
+            it('should handle conflicting values by moving them to firstMatch', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            // @ts-expect-error test vendor cap
+                            'my:option': 'default'
+                        },
+                        firstMatch: [
+                            {
+                                // @ts-expect-error test vendor cap
+                                'my:option': 'special'
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Conflicting key should be removed from alwaysMatch
+                expect(payload.capabilities.alwaysMatch['my:option']).toBeUndefined()
+
+                // Conflicting key should remain in firstMatch with its specific value
+                expect(payload.capabilities.firstMatch[0]['my:option']).toBe('special')
+            })
+
+            it('should handle multiple firstMatch entries with conflicts', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            // @ts-expect-error test vendor cap
+                            'my:option': 'default'
+                        },
+                        firstMatch: [
+                            {
+                                // @ts-expect-error test vendor cap
+                                'my:option': 'option1'
+                            },
+                            {
+                                // @ts-expect-error test vendor cap
+                                'my:option': 'option2'
+                            },
+                            {}
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Conflicting key should be removed from alwaysMatch
+                expect(payload.capabilities.alwaysMatch['my:option']).toBeUndefined()
+
+                // Each firstMatch should have the key with its specific value
+                expect(payload.capabilities.firstMatch[0]['my:option']).toBe('option1')
+                expect(payload.capabilities.firstMatch[1]['my:option']).toBe('option2')
+                // Empty firstMatch should get the default value from alwaysMatch
+                expect(payload.capabilities.firstMatch[2]['my:option']).toBe('default')
+            })
+
+            it('should handle complex object values when checking for conflicts', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            'goog:chromeOptions': {
+                                args: ['--headless']
+                            }
+                        },
+                        firstMatch: [
+                            {
+                                'goog:chromeOptions': {
+                                    args: ['--headless']
+                                }
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Identical objects should be treated as non-conflicting
+                expect(payload.capabilities.alwaysMatch['goog:chromeOptions']).toEqual({
+                    args: ['--headless']
+                })
+                expect(payload.capabilities.firstMatch[0]['goog:chromeOptions']).toBeUndefined()
+            })
+
+            it('should detect structurally equal objects as conflicts', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            'goog:chromeOptions': {
+                                args: ['--headless']
+                            }
+                        },
+                        firstMatch: [
+                            {
+                                'goog:chromeOptions': {
+                                    args: ['--headless', '--disable-gpu']
+                                }
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Different objects should be treated as conflicting
+                expect(payload.capabilities.alwaysMatch['goog:chromeOptions']).toBeUndefined()
+                expect(payload.capabilities.firstMatch[0]['goog:chromeOptions']).toEqual({
+                    args: ['--headless', '--disable-gpu']
+                })
+            })
+
+            it('should handle mixed scenarios with some overlapping and some unique keys', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            platformName: 'linux',
+                            // @ts-expect-error test vendor cap
+                            'my:sharedOption': 'value'
+                        },
+                        firstMatch: [
+                            {
+                                browserName: 'chrome',
+                                // @ts-expect-error test vendor cap
+                                'my:uniqueOption': 'special'
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Non-conflicting keys should stay in alwaysMatch
+                expect(payload.capabilities.alwaysMatch.platformName).toBe('linux')
+                expect(payload.capabilities.alwaysMatch['my:sharedOption']).toBe('value')
+
+                // Duplicate key should be removed from firstMatch
+                expect(payload.capabilities.firstMatch[0].browserName).toBeUndefined()
+
+                // Unique keys in firstMatch should remain
+                expect(payload.capabilities.firstMatch[0]['my:uniqueOption']).toBe('special')
+            })
+
+            it('should handle empty firstMatch array', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome'
+                        },
+                        firstMatch: []
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // alwaysMatch should remain unchanged
+                expect(payload.capabilities.alwaysMatch.browserName).toBe('chrome')
+                expect(payload.capabilities.firstMatch).toEqual([])
+            })
+
+            it('should handle vendor-specific capabilities when duplicated', async () => {
+                const params: RemoteConfig = {
+                    hostname: 'localhost',
+                    port: 4444,
+                    path: '/',
+                    protocol: 'http',
+                    capabilities: {
+                        alwaysMatch: {
+                            browserName: 'chrome',
+                            'sauce:options': {
+                                build: 'my-build'
+                            }
+                        },
+                        firstMatch: [
+                            {
+                                'sauce:options': {
+                                    build: 'my-build'
+                                }
+                            }
+                        ]
+                    }
+                }
+
+                await startWebDriverSession(params)
+
+                const body = mockedFetch.mock.calls[0]?.[1]?.body as string
+                expect(body).toBeTruthy()
+                const payload = JSON.parse(body)
+
+                // Vendor caps should stay in alwaysMatch (no conflict) and be removed from firstMatch
+                expect(payload.capabilities.alwaysMatch['sauce:options']).toEqual({
+                    build: 'my-build'
+                })
+                expect(payload.capabilities.firstMatch[0]['sauce:options']).toBeUndefined()
+            })
+        })
+    })
+
+    describe('validateCapabilities', () => {
+        it('should throw an error if incognito is defined', () => {
+            expect(() => {
+                validateCapabilities({
+                    browserName: 'chrome',
+                    'goog:chromeOptions': {
+                        args: ['--incognito']
+                    }
+                })
+            }).toThrow('Please remove "incognito" from `"goog:chromeOptions".args`')
+        })
+
+        it('should throw an error if incognito is defined as string', () => {
+            expect(() => {
+                validateCapabilities({
+                    browserName: 'chrome',
+                    'goog:chromeOptions': {
+                        args: ['incognito']
+                    }
+                })
+            }).toThrow('Please remove "incognito" from `"goog:chromeOptions".args`')
+        })
+
+        it('should not throw an error if incognito is not defined', () => {
+            expect(() => {
+                validateCapabilities({
+                    browserName: 'chrome'
+                })
+            }).not.toThrow()
         })
     })
 })

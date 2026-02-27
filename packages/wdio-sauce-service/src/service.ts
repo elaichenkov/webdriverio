@@ -1,14 +1,21 @@
-import fs from 'fs'
-import path from 'path'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
-import SauceLabs, { SauceLabsOptions, Job } from 'saucelabs'
+import {
+    default as SauceLabs,
+    type SauceLabsOptions,
+    type Job,
+    type TestRun as TestRunRequestBody,
+    type TestRuns,
+    type Status as TestStatus,
+} from 'saucelabs'
 import logger from '@wdio/logger'
 import type { Services, Capabilities, Options, Frameworks } from '@wdio/types'
-import type { Browser, MultiRemoteBrowser } from 'webdriverio'
 
-import { isUnifiedPlatform } from './utils'
-import { SauceServiceConfig } from './types'
-import { DEFAULT_OPTIONS } from './constants'
+import { isRDC, ansiRegex } from './utils.js'
+import { DEFAULT_OPTIONS } from './constants.js'
+import type { SauceServiceConfig } from './types.js'
+import { CI } from './ci.js'
 
 const jobDataProperties = ['name', 'tags', 'public', 'build', 'custom-data'] as const
 
@@ -19,46 +26,53 @@ export default class SauceService implements Services.ServiceInstance {
     private _maxErrorStackLength = 5
     private _failures = 0 // counts failures between reloads
     private _isServiceEnabled = true
-    private _isJobNameSet = false;
+    private _isJobNameSet = false
+    private _testStartTime: Date
 
     private _options: SauceServiceConfig
-    private _api: SauceLabs
-    private _isRDC: boolean
-    private _browser?: Browser<'async'> | MultiRemoteBrowser<'async'>
-    private _isUP?: boolean
+    private _api: SauceLabs.default
+    private _browser?: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser
+    private _isRDC?: boolean
     private _suiteTitle?: string
+    private _cid = ''
+
+    private _testRuns: TestRunRequestBody[]
 
     constructor (
         options: SauceServiceConfig,
-        private _capabilities: Capabilities.RemoteCapability,
+        private _capabilities: Capabilities.ResolvedTestrunnerCapabilities,
         private _config: Options.Testrunner
     ) {
         this._options = { ...DEFAULT_OPTIONS, ...options }
-        this._api = new SauceLabs(this._config as unknown as SauceLabsOptions)
-        this._isRDC = 'testobject_api_key' in this._capabilities
+        this._api = new SauceLabs.default(this._config as unknown as SauceLabsOptions)
         this._maxErrorStackLength = this._options.maxErrorStackLength || this._maxErrorStackLength
+
+        this._testStartTime = new Date()
+        this._testRuns = []
     }
 
     /**
      * gather information about runner
      */
-    beforeSession () {
+    beforeSession (_: Options.Testrunner, __: never, ___: never, cid: string) {
+        this._cid = cid
+
         /**
          * if no user and key is specified even though a sauce service was
          * provided set user and key with values so that the session request
-         * will fail (not for RDC tho due to other auth mechansim)
+         * will fail
          */
-        if (!this._isRDC && !this._config.user) {
+        if (!this._config.user) {
             this._isServiceEnabled = false
             this._config.user = 'unknown_user'
         }
-        if (!this._isRDC && !this._config.key) {
+        if (!this._config.key) {
             this._isServiceEnabled = false
             this._config.key = 'unknown_key'
         }
     }
 
-    before (caps: unknown, specs: string[], browser: Browser<'async'> | MultiRemoteBrowser<'async'>) {
+    before (_: unknown, __: string[], browser: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser) {
         this._browser = browser
 
         // Ensure capabilities are not null in case of multiremote
@@ -67,36 +81,46 @@ export default class SauceService implements Services.ServiceInstance {
         // contains `simulator` or `emulator` it's an EMU/SIM session
         // `this._browser.capabilities` returns the process data from Sauce which is without
         // the postfix
-        const capabilities = (this._browser as Browser<'async'>).requestedCapabilities || {}
-        this._isUP = isUnifiedPlatform(capabilities as Capabilities.Capabilities)
+        const capabilities = (this._browser as WebdriverIO.Browser).requestedCapabilities || {}
+        this._isRDC = isRDC(capabilities as WebdriverIO.Capabilities)
     }
 
-    beforeSuite (suite: Frameworks.Suite) {
+    async beforeSuite (suite: Frameworks.Suite) {
         this._suiteTitle = suite.title
+
+        /**
+         * Set the default job name at the suite level to make sure we account
+         * for the cases where there is a long running `before` function for a
+         * suite or one that can fail.
+         * Don't do this for Jasmine because `suite.title` is `Jasmine__TopLevel__Suite`
+         * and `suite.fullTitle` is `undefined`, so no alternative to use for the job name.
+         */
+        if (this._browser && !this._isJobNameSet && this._suiteTitle !== 'Jasmine__TopLevel__Suite') {
+            await this._setJobName(this._suiteTitle)
+        }
     }
 
-    beforeTest (test: Frameworks.Test) {
-        /**
-         * Date:    20200714
-         * Remark:  Sauce Unified Platform doesn't support updating the context yet.
-         */
-        if (!this._isServiceEnabled || this._isRDC || this._isUP || !this._browser) {
+    async beforeTest (test: Frameworks.Test) {
+        if (!this._isServiceEnabled || !this._browser) {
             return
         }
+
+        this._testStartTime = new Date()
 
         /**
          * in jasmine we get Jasmine__TopLevel__Suite as title since service using test
          * framework hooks in order to execute async functions.
-         * This tweak allows us to set the real suite name for jasmine jobs.
+         * This  tweak allows us to set the real suite name for jasmine jobs.
          */
         /* istanbul ignore if */
-        if (this._suiteTitle === 'Jasmine__TopLevel__Suite') {
-            this._suiteTitle = test.fullName.slice(0, test.fullName.indexOf(test.description || '') - 1)
+        /* istanbul ignore if */
+        if (this._suiteTitle === 'Jasmine__TopLevel__Suite' && test.fullName) {
+            const descriptionIndex = test.fullName.indexOf(test.description || '')
+            this._suiteTitle = descriptionIndex > 0 ? test.fullName.slice(0, descriptionIndex - 1) : test.title || this._suiteTitle
         }
 
-        if (this._browser && !this._isUP && !this._isJobNameSet) {
-            this._browser.execute('sauce:job-name=' + this._suiteTitle)
-            this._isJobNameSet = true
+        if (this._browser && !this._isJobNameSet) {
+            await this._setJobName(this._suiteTitle)
         }
 
         const fullTitle = (
@@ -109,7 +133,7 @@ export default class SauceService implements Services.ServiceInstance {
              */
             `${test.parent} - ${test.title}`
         )
-        ;(this._browser as Browser<'async'>).execute('sauce:context=' + fullTitle)
+        return this.setAnnotation(`sauce:context=${fullTitle}`)
     }
 
     afterSuite (suite: Frameworks.Suite) {
@@ -118,16 +142,19 @@ export default class SauceService implements Services.ServiceInstance {
         }
     }
 
+    private _reportErrorLog (error: Error) {
+        const lines = (error.stack || '').split(/\r?\n/).slice(0, this._maxErrorStackLength)
+        lines.forEach((line:string) => this.setAnnotation(`sauce:context=${line.replace(ansiRegex(), '')}`))
+    }
+
     afterTest (test: Frameworks.Test, context: unknown, results: Frameworks.TestResult) {
+        this._collectTestRun(test, results)
+
         /**
          * If the test failed push the stack to Sauce Labs in separate lines
-         * This should not be done for UP because it's not supported yet and
-         * should be removed when UP supports `sauce:context`
          */
-        const { error } = results
-        if (error && !this._isUP){
-            const lines = error.stack.split(/\r?\n/).slice(0, this._maxErrorStackLength)
-            lines.forEach((line:string) => this._browser!.execute('sauce:context=' + line))
+        if (results.error && results.error.stack){
+            this._reportErrorLog(results.error)
         }
 
         /**
@@ -155,6 +182,20 @@ export default class SauceService implements Services.ServiceInstance {
             return
         }
 
+        const isJasminePendingError = typeof results.error === 'string' && results.error.includes('marked Pending')
+        if (!results.passed && !isJasminePendingError) {
+            ++this._failures
+        }
+    }
+
+    afterHook(test: never, context: never, results: Frameworks.TestResult) {
+        /**
+         * If the test failed push the stack to Sauce Labs in separate lines
+         */
+        if (results.error){
+            this._reportErrorLog(results.error)
+        }
+
         if (!results.passed) {
             ++this._failures
         }
@@ -163,41 +204,53 @@ export default class SauceService implements Services.ServiceInstance {
     /**
      * For CucumberJS
      */
-    beforeFeature (uri: unknown, feature: { name: string }) {
-        /**
-         * Date:    20200714
-         * Remark:  Sauce Unified Platform doesn't support updating the context yet.
-         */
-        if (!this._isServiceEnabled || this._isRDC || this._isUP || !this._browser) {
+    async beforeFeature (uri: unknown, feature: { name: string }) {
+        if (!this._isServiceEnabled || !this._browser) {
             return
         }
 
         this._suiteTitle = feature.name
 
-        if (this._browser && !this._isUP && !this._isJobNameSet) {
-            this._browser.execute('sauce:job-name=' + this._suiteTitle)
-            this._isJobNameSet = true
+        if (this._browser && !this._isJobNameSet) {
+            await this._setJobName(this._suiteTitle)
         }
 
-        (this._browser as Browser<'async'>).execute('sauce:context=Feature: ' + this._suiteTitle)
+        return this.setAnnotation(`sauce:context=Feature: ${this._suiteTitle}`)
     }
 
+    /**
+     * Runs before a Cucumber Scenario.
+     * @param world world object containing information on pickle and test step
+     */
     beforeScenario (world: Frameworks.World) {
-        /**
-         * Date:    20200714
-         * Remark:  Sauce Unified Platform doesn't support updating the context yet.
-         */
-        if (!this._isServiceEnabled || this._isRDC || this._isUP || !this._browser) {
+        if (!this._isServiceEnabled || !this._browser) {
             return
         }
 
         const scenarioName = world.pickle.name || 'unknown scenario'
-        ;(this._browser as Browser<'async'>).execute('sauce:context=Scenario: ' + scenarioName)
+        return this.setAnnotation(`sauce:context=-Scenario: ${scenarioName}`)
     }
 
-    afterScenario(world: Frameworks.World) {
+    async beforeStep (step: Frameworks.PickleStep) {
+        if (!this._isServiceEnabled || !this._browser) {
+            return
+        }
+
+        const { keyword, text } = step
+        return this.setAnnotation(`sauce:context=--Step: ${keyword}${text}`)
+    }
+
+    /**
+     * Runs after a Cucumber Scenario.
+     * @param world world object containing information on pickle and test step
+     * @param result result object containing
+     * @param result.passed   true if scenario has passed
+     * @param result.error    error stack if scenario failed
+     * @param result.duration duration of scenario in milliseconds
+     */
+    afterScenario(world: Frameworks.World, result: Frameworks.PickleResult) {
         // check if scenario has failed
-        if (world.result && world.result.status === 6) {
+        if (!result.passed) {
             ++this._failures
         }
     }
@@ -206,7 +259,7 @@ export default class SauceService implements Services.ServiceInstance {
      * update Sauce Labs job
      */
     async after (result: number) {
-        if (!this._browser || (!this._isServiceEnabled && !this._isRDC)) {
+        if (!this._browser || !this._isServiceEnabled) {
             return
         }
 
@@ -223,15 +276,36 @@ export default class SauceService implements Services.ServiceInstance {
         const status = 'status: ' + (failures > 0 ? 'failing' : 'passing')
         if (!this._browser.isMultiremote) {
             await this._uploadLogs(this._browser.sessionId)
+            this._updateJobIdInTestRuns(this._browser.sessionId)
+            try {
+                await this._api.createTestRunsV1({ test_runs: this._testRuns } as TestRuns)
+            } catch (e) {
+                log.debug('Submitting test run failed: ', e)
+            }
+
             log.info(`Update job with sessionId ${this._browser.sessionId}, ${status}`)
-            return this._isUP ? this.updateUP(failures) : this.updateJob(this._browser.sessionId, failures)
+            return this._isRDC ?
+                this.setAnnotation(`sauce:job-result=${failures === 0}`) :
+                this.updateJob(this._browser.sessionId, failures)
         }
 
-        const mulitremoteBrowser = this._browser as MultiRemoteBrowser<'async'>
         return Promise.all(Object.keys(this._capabilities).map(async (browserName) => {
-            await this._uploadLogs(mulitremoteBrowser[browserName].sessionId)
-            log.info(`Update multiremote job for browser "${browserName}" and sessionId ${mulitremoteBrowser[browserName].sessionId}, ${status}`)
-            return this._isUP ? this.updateUP(failures) : this.updateJob(mulitremoteBrowser[browserName].sessionId, failures, false, browserName)
+            const multiRemoteBrowser = (this._browser as WebdriverIO.MultiRemoteBrowser).getInstance(browserName)
+            const isMultiRemoteRDC = isRDC(multiRemoteBrowser.capabilities as WebdriverIO.Capabilities)
+            log.info(`Update multiRemote job for browser "${browserName}" and sessionId ${multiRemoteBrowser.sessionId}, ${status}`)
+            await this._uploadLogs(multiRemoteBrowser.sessionId)
+            this._updateJobIdInTestRuns(multiRemoteBrowser.sessionId)
+            try {
+                await this._api.createTestRunsV1({ test_runs: this._testRuns } as TestRuns)
+            } catch (e) {
+                log.debug('Submitting test run failed: ', e)
+            }
+
+            // Sauce Unified Platform (RDC) can not be updated with an API.
+            if (isMultiRemoteRDC) {
+                return this.setAnnotation(`sauce:job-result=${failures === 0}`)
+            }
+            return this.updateJob(multiRemoteBrowser.sessionId, failures, false, browserName)
         }))
     }
 
@@ -245,8 +319,8 @@ export default class SauceService implements Services.ServiceInstance {
             return
         }
 
-        const files = (await fs.promises.readdir(this._config.outputDir))
-            .filter((file) => file.endsWith('.log'))
+        const files = (await fs.readdir(this._config.outputDir))
+            .filter((file) => (file.startsWith(`wdio-${this._cid}.`) || file.startsWith(`wdio-${this._cid}-`)) && file.endsWith('.log'))
         log.info(`Uploading WebdriverIO logs (${files.join(', ')}) to Sauce Labs`)
 
         return this._api.uploadJobAssets(
@@ -256,7 +330,7 @@ export default class SauceService implements Services.ServiceInstance {
     }
 
     onReload (oldSessionId: string, newSessionId: string) {
-        if (!this._browser || (!this._isServiceEnabled && !this._isRDC)) {
+        if (!this._browser || !this._isServiceEnabled) {
             return
         }
 
@@ -267,20 +341,14 @@ export default class SauceService implements Services.ServiceInstance {
             return this.updateJob(oldSessionId, this._failures, true)
         }
 
-        const mulitremoteBrowser = this._browser as MultiRemoteBrowser<'async'>
+        const mulitremoteBrowser = this._browser as WebdriverIO.MultiRemoteBrowser
         const browserName = mulitremoteBrowser.instances.filter(
-            (browserName: string) => mulitremoteBrowser[browserName].sessionId === newSessionId)[0]
+            (browserName: string) => mulitremoteBrowser.getInstance(browserName).sessionId === newSessionId)[0]
         log.info(`Update (reloaded) multiremote job for browser "${browserName}" and sessionId ${oldSessionId}, ${status}`)
         return this.updateJob(oldSessionId, this._failures, true, browserName)
     }
 
     async updateJob (sessionId: string, failures: number, calledOnReload = false, browserName?: string) {
-        if (this._isRDC) {
-            await this._api.updateTest(sessionId, { passed: failures === 0 })
-            this._failures = 0
-            return
-        }
-
         const body = this.getBody(failures, calledOnReload, browserName)
         await this._api.updateJob(this._config.user as string, sessionId, body as Job)
         this._failures = 0
@@ -290,7 +358,7 @@ export default class SauceService implements Services.ServiceInstance {
      * VM message data
      */
     getBody (failures: number, calledOnReload = false, browserName?: string) {
-        let body: Partial<Job> = {}
+        const body: Partial<Job> = {}
 
         /**
          * add reload count to title if reload is used
@@ -307,7 +375,7 @@ export default class SauceService implements Services.ServiceInstance {
 
             let testCnt = ++this._testCnt
 
-            const mulitremoteBrowser = this._browser as MultiRemoteBrowser<'async'>
+            const mulitremoteBrowser = this._browser as WebdriverIO.MultiRemoteBrowser
             if (this._browser && this._browser.isMultiremote) {
                 testCnt = Math.ceil(testCnt / mulitremoteBrowser.instances.length)
             }
@@ -315,9 +383,9 @@ export default class SauceService implements Services.ServiceInstance {
             body.name += ` (${testCnt})`
         }
 
-        let caps = (this._capabilities as Capabilities.Capabilities)['sauce:options'] || this._capabilities as Capabilities.SauceLabsCapabilities
+        const caps = (this._capabilities as WebdriverIO.Capabilities)['sauce:options'] || this._capabilities as Capabilities.SauceLabsCapabilities
 
-        for (let prop of jobDataProperties) {
+        for (const prop of jobDataProperties) {
             if (!caps[prop]) {
                 continue
             }
@@ -325,19 +393,113 @@ export default class SauceService implements Services.ServiceInstance {
             body[prop] = caps[prop]
         }
 
+        if (this._options.setJobName) {
+            body.name = this._options.setJobName(
+                this._config,
+                this._capabilities,
+                this._suiteTitle!
+            )
+        }
+
         body.passed = failures === 0
         return body
     }
 
     /**
-     * Update the UP with the JS-executor
-     * @param {number} failures
-     * @returns {*}
+     * Update the running Sauce Labs Job with an annotation
      */
-    updateUP (failures: number){
+    async setAnnotation (annotation: string) {
         if (!this._browser) {
             return
         }
-        return this._browser.execute(`sauce:job-result=${failures === 0}`)
+
+        if (this._browser.isMultiremote) {
+            return Promise.all(Object.keys(this._capabilities).map(async (browserName) => {
+                const multiRemoteBrowser = (this._browser as WebdriverIO.MultiRemoteBrowser).getInstance(browserName)
+                return multiRemoteBrowser.executeScript(annotation, [])
+            }))
+        }
+
+        return (this._browser as WebdriverIO.Browser).executeScript(annotation, [])
+    }
+
+    private async _setJobName(suiteTitle: string | undefined) {
+        if (!suiteTitle) {
+            return
+        }
+        let jobName = suiteTitle
+        if (this._options.setJobName) {
+            jobName = this._options.setJobName(
+                this._config,
+                this._capabilities,
+                suiteTitle
+            )
+        }
+        await this.setAnnotation(`sauce:job-name=${jobName}`)
+        this._isJobNameSet = true
+    }
+
+    private _getStatusForTestRun(result: Frameworks.TestResult) {
+        if (['passed', 'failed', 'skipped'].includes(result.status)) {
+            return result.status as TestStatus
+        }
+        if (result.error) {
+            return 'failed'
+        }
+        if (result.passed) {
+            return 'passed'
+        }
+        return 'skipped'
+    }
+
+    private _getOsName(osName: string | undefined) {
+        if (!osName) {
+            return 'unknown'
+        }
+        if ('darwin' === osName) {
+            return 'Mac'
+        }
+        return osName
+    }
+
+    private _collectTestRun(test: Frameworks.Test, results: Frameworks.TestResult) {
+        const caps = this._capabilities as WebdriverIO.Capabilities
+        const sauceCaps = this._capabilities as Capabilities.SauceLabsCapabilities
+        const testRun: TestRunRequestBody = {
+            name: `${test.parent} - ${test.title}`,
+            start_time: this._testStartTime?.toISOString(),
+            end_time: (new Date()).toISOString(),
+            duration: results.duration || 0,
+            browser: caps?.browserName || 'chrome',
+            build_name: sauceCaps?.build?.toString() || '',
+            tags: sauceCaps?.tags,
+            framework: 'webdriverio',
+            platform: 'other',
+            os: this._getOsName(process.platform),
+            status: this._getStatusForTestRun(results),
+            type: 'web',
+            ci: {
+                ref_name: CI.refName,
+                commit_sha: CI.sha,
+                repository: CI.repo,
+                branch: CI.refName,
+            }
+        }
+
+        if (results.error) {
+            testRun.errors = [{
+                message: results.error?.message?.toString(),
+                path: test.file,
+            }]
+        }
+        this._testRuns?.push(testRun)
+    }
+
+    private _updateJobIdInTestRuns(id: string) {
+        this._testRuns?.forEach(testRun => {
+            testRun.sauce_job = {
+                id,
+            }
+        })
     }
 }

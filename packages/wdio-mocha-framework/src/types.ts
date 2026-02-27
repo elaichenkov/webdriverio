@@ -1,11 +1,11 @@
-import type { Options } from '@wdio/types'
+export { default } from 'mocha'
 
 export interface MochaOpts {
     /**
      * The `require` option is useful when you want to add or extend some
      * basic functionality (WebdriverIO framework option).
      */
-    require?: string | string[],
+    require?: string[],
     /**
      * Use the given module(s) to compile files. Compilers will be included
      * before requires (WebdriverIO framework option).
@@ -73,22 +73,18 @@ export interface MochaOpts {
     ui?: 'bdd' | 'tdd' | 'qunit' | 'exports';
 }
 
-export interface MochaConfig extends Required<Options.Testrunner> {
-    mochaOpts: MochaOpts
-}
-
 export interface MochaError {
     name: string
     message: string
     stack: string
     type: string
-    expected: any
-    actual: any
+    expected: unknown
+    actual: unknown
 }
 
 export interface FrameworkMessage {
     type: string
-    payload?: any
+    payload?: unknown
     err?: MochaError
 }
 
@@ -106,12 +102,6 @@ export interface FormattedMessage {
     duration?: number
     currentTest?: string
     error?: MochaError
-    context?: any
-}
-
-export interface MochaContext {
-    context: Mocha.MochaGlobals
-    file: string
-    mocha: Mocha
-    options: MochaOpts
+    context?: unknown
+    body?: string
 }

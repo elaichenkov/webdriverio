@@ -1,9 +1,14 @@
-import type { Capability } from '@wdio/config'
+import path from 'node:path'
+import { describe, expect, it, vi, test, afterEach } from 'vitest'
 
-import BaseReporter from '../src/reporter'
+import BaseReporter from '../src/reporter.js'
+
+vi.mock('@wdio/utils', () => import(path.join(process.cwd(), '__mocks__', '@wdio/utils')))
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+vi.mock('@wdio/config', () => import(path.join(process.cwd(), '__mocks__', '@wdio/config')))
 
 class CustomReporter {
-    public emit = jest.fn()
+    public emit = vi.fn()
     public isCustom = true
     public inSync = false
 
@@ -14,37 +19,69 @@ class CustomReporter {
     }
 }
 
-const capability: Capability = { browserName: 'foo' }
+const capability: WebdriverIO.Capabilities = { browserName: 'foo' }
 
-process.send = jest.fn()
+process.send = vi.fn()
 
 describe('BaseReporter', () => {
-    it('should load all reporters', () => {
+    it('should load all reporters', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
                 'dot',
                 ['dot', { foo: 'bar' }]
             ]
-        }, '0-0', capability)
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
         expect(reporter['_reporters']).toHaveLength(2)
     })
 
-    it('getLogFile', () => {
+    it('should make "dot" reporter default', async () => {
+        const reporter = new BaseReporter({
+            outputDir: '/foo/bar',
+            reporters: [],
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
+
+        expect(reporter['_reporters']).toHaveLength(1)
+        expect(reporter['_reporters'][0].constructor.name).toBe('DotReporter')
+    })
+
+    it('getLogFile', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
                 'dot',
                 ['dot', { foo: 'bar' }]
             ]
-        }, '0-0', capability)
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
         expect(reporter.getLogFile('foobar'))
             .toMatch(/(\\|\/)foo(\\|\/)bar(\\|\/)wdio-0-0-foobar-reporter.log/)
     })
 
-    it('should output log file to custom outputDir', () => {
+    it('can set custom logFile property', async () => {
+        const reporter = new BaseReporter({
+            outputDir: '/foo/bar',
+            reporters: [
+                [CustomReporter, { foo: 'bar', logFile: '/barfoo.log' }],
+                ['dot', { foo: 'bar', logFile: '/foobar.log' }]
+            ],
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
+
+        // @ts-expect-error
+        expect(reporter['_reporters'][0].options.logFile)
+            .toBe('/barfoo.log')
+        // @ts-expect-error
+        expect(reporter['_reporters'][1].options.logFile)
+            .toBe('/foobar.log')
+    })
+
+    it('should output log file to custom outputDir', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
@@ -52,33 +89,41 @@ describe('BaseReporter', () => {
                     foo: 'bar',
                     outputDir: '/foo/bar/baz'
                 }]
-            ]
-        }, '0-0', capability)
+            ],
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
         expect(reporter.getLogFile('dot'))
             .toMatch(/(\\|\/)foo(\\|\/)bar(\\|\/)baz(\\|\/)wdio-0-0-dot-reporter.log/)
     })
 
-    it('should return custom log file name', () => {
+    it('should return custom log file name using cid and capabilities', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
                 'dot',
                 ['dot', {
                     foo: 'bar',
-                    outputFileFormat: (options: any) => {
-                        return `wdio-results-${options.cid}.xml`
+                    outputFileFormat: (options) => {
+                        const { cid, capabilities } = options
+                        expect(cid).toBe('0-0')
+                        expect(capabilities).toBe(capability)
+                        if ('browserName' in capabilities) {
+                            const { browserName } = capabilities
+                            return `wdio-results-${cid}-${browserName}.log`
+                        }
                     }
                 }]
             ]
-        }, '0-0', capability)
-
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
         expect(reporter.getLogFile('dot'))
-            .toMatch(/(\\|\/)foo(\\|\/)bar(\\|\/)wdio-results-0-0.xml/)
+            .toMatch(/(\\|\/)foo(\\|\/)bar(\\|\/)wdio-results-0-0-foo.log/)
     })
 
-    it('should throw error if outputFileFormat is not a function', () => {
-        expect(() => {
-            new BaseReporter({
+    it('should throw error if outputFileFormat is not a function', async () => {
+        await expect(async () => {
+            const reporter = new BaseReporter({
                 outputDir: '/foo/bar',
                 reporters: [
                     'dot',
@@ -87,8 +132,9 @@ describe('BaseReporter', () => {
                         outputFileFormat: 'foo'
                     }]
                 ]
-            }, '0-0', capability)
-        }).toThrow('outputFileFormat must be a function')
+            } as WebdriverIO.Config, '0-0', capability)
+            await reporter.initReporters()
+        }).rejects.toThrow('outputFileFormat must be a function')
     })
 
     test('getLogFile returns undefined if outputDir is not defined', () => {
@@ -97,89 +143,156 @@ describe('BaseReporter', () => {
                 'dot',
                 ['dot', { foo: 'bar' }]
             ]
-        }, '0-0', capability)
+        } as WebdriverIO.Config, '0-0', capability)
 
         expect(reporter.getLogFile('foobar')).toBe(undefined)
     })
 
-    it('should emit events to all reporters', () => {
+    it('should emit events to all reporters', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
                 'dot',
                 ['dot', { foo: 'bar' }]
             ]
-        }, '0-0', capability)
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
-        const payload = { foo: [1, 2, 3] }
+        const payload: any = { foo: [1, 2, 3] }
         reporter.emit('runner:start', payload)
-        expect(reporter['_reporters'].map((r) => (r.emit as jest.Mock).mock.calls)).toEqual([
+        expect(reporter['_reporters'].map((r) => vi.mocked(r.emit).mock.calls)).toEqual([
             [['runner:start', Object.assign(payload, { cid: '0-0' })]],
             [['runner:start', Object.assign(payload, { cid: '0-0' })]]
         ])
         expect(process.send).not.toBeCalled()
     })
 
-    it('should send printFailureMessage', () => {
+    it('should send printFailureMessage on `test:fail`', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [
                 'dot',
                 ['dot', { foo: 'bar' }]
             ]
-        }, '0-0', capability)
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
-        const payload = { foo: [1, 2, 3] }
+        const payload: any = { foo: [1, 2, 3] }
         reporter.emit('test:fail', payload)
-        expect(reporter['_reporters'].map((r) => (r.emit as jest.Mock).mock.calls)).toEqual([
-            [['test:fail', Object.assign(payload, { cid: '0-0' })]],
-            [['test:fail', Object.assign(payload, { cid: '0-0' })]]
-        ])
+
+        reporter['_reporters'].forEach((reporter) => {
+            expect(reporter.emit).toHaveBeenCalledWith('test:fail', { ...payload,  cid: '0-0' })
+        })
         expect(process.send).toBeCalledTimes(1)
-        expect((process.send as jest.Mock).mock.calls[0][0].name).toBe('printFailureMessage')
+        expect(process.send).toHaveBeenCalledWith(expect.objectContaining({ name: 'printFailureMessage' }))
     })
 
-    it('should allow to load custom reporters', () => {
+    it('should send printFailureMessage on `hook:end`', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
-            reporters: [CustomReporter]
-        }, '0-0', capability)
+            reporters: [
+                'dot',
+                ['dot', { foo: 'bar' }]
+            ]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
+        const error = new Error('foobar')
+
+        const payload = { foo: [1, 2, 3], error, title: '"before all" hook' }
+        reporter.emit('hook:end', payload)
+
+        reporter['_reporters'].forEach((reporter) => {
+            expect(reporter.emit).toHaveBeenCalledWith('hook:end', { ...payload,  cid: '0-0' })
+        })
+        expect(process.send).toBeCalledTimes(1)
+        expect(process.send).toHaveBeenCalledWith(expect.objectContaining({ name: 'printFailureMessage' }))
+    })
+
+    it('should send printFailureMessage and continue when reporter throws an error', async () => {
+        const faultyReporter = 'dot'
+        const workingReporter = ['dot', { foo: 'bar' }]
+        const reporter = new BaseReporter({
+            outputDir: '/foo/bar',
+            reporters: [faultyReporter, workingReporter] } as WebdriverIO.Config, '0-0', capability)
+
+        await reporter.initReporters()
+        const faultyReporterInstance = reporter['_reporters'][0]
+        const workingReporterInstance = reporter['_reporters'][1]
+        vi.spyOn(faultyReporterInstance, 'emit').mockImplementation(() => {
+            throw new Error('Reporter throws an error')
+        })
+
+        const payload: any = { foo: [1] }
+        reporter.emit('any', payload)
+
+        expect(faultyReporterInstance.emit).toBeCalledTimes(1)
+        expect(workingReporterInstance.emit).toBeCalledTimes(1)
+        expect(process.send).toBeCalledTimes(1)
+        expect(process.send).toHaveBeenCalledWith({
+            'content': {
+                'cid': '0-0',
+                'error': {
+                    'message': 'Reporter throws an error',
+                    'stack': expect.stringContaining('Error: Reporter throws an error\n    at DotReporter.<anonymous>')
+
+                },
+                'fullTitle': 'reporter DotReporter',
+            },
+            'name': 'printFailureMessage',
+            'origin': 'reporter',
+        })
+
+    })
+
+    it('should allow to load custom reporters', async () => {
+        const reporter = new BaseReporter({
+            outputDir: '/foo/bar',
+            reporters: [CustomReporter] as any,
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
         expect(reporter['_reporters']).toHaveLength(1)
         // @ts-ignore
         expect(reporter['_reporters'][0].isCustom).toBe(true)
     })
 
-    it('should allow to write to output directory with custom reporter', () => {
+    it('should allow to write to output directory with custom reporter', async () => {
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
             reporters: [[CustomReporter, {
                 outputDir: '/foo/baz/bar'
-            }]]
-        }, '0-0', capability)
+            }]] as any,
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
         expect(reporter.getLogFile('CustomReporter')).toMatch(/(\\|\/)foo(\\|\/)baz(\\|\/)bar(\\|\/)wdio-0-0-CustomReporter-reporter.log/)
     })
 
-    it('should throw if reporters are in a wrong format', () => {
-        (expect as any as jest.Expect).hasAssertions()
+    it('should throw if reporters are in a wrong format', async () => {
+        expect.hasAssertions()
         try {
-            new BaseReporter({
+            const reporter = new BaseReporter({
                 outputDir: '/foo/bar',
-                reporters: [{ foo: 'bar' }]
-            }, '0-0', capability)
-        } catch (e) {
-            expect(e.message).toBe('Invalid reporters config')
+                reporters: [{ foo: 'bar' } as any],
+                capabilities: [capability]
+            } as WebdriverIO.Config, '0-0', capability)
+            await reporter.initReporters()
+        } catch (err: any) {
+            expect(err.message).toBe('Invalid reporters config')
         }
     })
 
     it('should have a waitForSync method to allow reporters to sync stuff', async () => {
-        (expect as any as jest.Expect).hasAssertions()
+        expect.hasAssertions()
 
         const start = Date.now()
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
-            reporters: [CustomReporter, CustomReporter]
-        }, '0-0', capability)
+            reporters: [CustomReporter, CustomReporter] as any,
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
         // @ts-ignore test reporter param
         setTimeout(() => (reporter['_reporters'][0].inSync = true), 100)
@@ -190,14 +303,16 @@ describe('BaseReporter', () => {
     })
 
     it('it should fail if waitForSync times out', async () => {
-        (expect as any as jest.Expect).hasAssertions()
+        expect.hasAssertions()
 
         const reporter = new BaseReporter({
             outputDir: '/foo/bar',
-            reporters: [CustomReporter],
+            reporters: [CustomReporter] as any,
             reporterSyncInterval: 10,
-            reporterSyncTimeout: 100
-        }, '0-0', capability)
+            reporterSyncTimeout: 100,
+            capabilities: [capability]
+        } as WebdriverIO.Config, '0-0', capability)
+        await reporter.initReporters()
 
         // @ts-ignore test reporter param
         setTimeout(() => (reporter['_reporters'][0].inSync = true), 112)
@@ -206,6 +321,6 @@ describe('BaseReporter', () => {
     })
 
     afterEach(() => {
-        (process.send as jest.Mock).mockClear()
+        vi.mocked(process.send)!.mockClear()
     })
 })

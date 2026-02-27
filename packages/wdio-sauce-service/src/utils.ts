@@ -1,12 +1,7 @@
-import { isW3C } from '@wdio/utils'
-import type { Capabilities } from '@wdio/types'
-
-import type { SauceServiceConfig } from './types'
-
 /**
- * Determine if the current instance is a Unified Platform instance. UP tests are Real Device tests
+ * Determine if the current instance is a RDC instance. RDC tests are Real Device tests
  * that can be started with different sets of capabilities. A deviceName is not mandatory, the only mandatory cap for
- * UP is the platformName. Downside of the platformName is that is can also be EMUSIM. EMUSIM can be distinguished by
+ * RDC is the platformName. Downside of the platformName is that is can also be EMUSIM. EMUSIM can be distinguished by
  * the `Emulator|Simulator` postfix
  *
  * @param {object} caps
@@ -45,10 +40,10 @@ import type { SauceServiceConfig } from './types'
  *  deviceContextId: ''
  * }
  */
-export function isUnifiedPlatform (caps: Capabilities.DesiredCapabilities){
+export function isRDC(caps: WebdriverIO.Capabilities) {
+    // @ts-expect-error outdated JSONWP capabilities
     const { 'appium:deviceName': appiumDeviceName = '', deviceName = '', platformName = '' } = caps
     const name = appiumDeviceName || deviceName
-
     // If the string contains `simulator` or `emulator` it's an EMU/SIM session
     return !name.match(/(simulator)|(emulator)/gi) && !!platformName.match(/(ios)|(android)/gi)
 }
@@ -58,45 +53,35 @@ export function isUnifiedPlatform (caps: Capabilities.DesiredCapabilities){
  * @param {object} caps
  * @returns {boolean}
  */
-export function isEmuSim (caps: Capabilities.DesiredCapabilities){
+export function isEmuSim(caps: WebdriverIO.Capabilities) {
+    // @ts-expect-error outdated JSONWP capabilities
     const { 'appium:deviceName': appiumDeviceName = '', deviceName = '', platformName = '' } = caps
     const name = appiumDeviceName || deviceName
-
     // If the string contains `simulator` or `emulator` it's an EMU/SIM session
     return !!name.match(/(simulator)|(emulator)/gi) && !!platformName.match(/(ios)|(android)/gi)
 }
 
 /** Ensure capabilities are in the correct format for Sauce Labs
- * @param {string} tunnelIdentifier - The default Sauce Connect tunnel identifier
+ * @param {string} tunnelName - The default Sauce Connect tunnel identifier
  * @param {object} options - Additional options to set on the capability
  * @returns {function(object): void} - A function that mutates a single capability
  */
-export function makeCapabilityFactory(tunnelIdentifier: string, options: any) {
-    return (capability: Capabilities.DesiredCapabilities) => {
-        // If the capability appears to be using the legacy JSON Wire Protocol
-        // we need to make sure the key 'sauce:options' is not present
-        const isLegacy = Boolean(
-            (capability.platform || capability.version) &&
-            !isW3C(capability) &&
-            !capability['sauce:options']
-        )
-
-        // Unified Platform and EMUSIM is currently not W3C ready, so the tunnel needs to be on the cap level
-        if (!capability['sauce:options'] && !isLegacy && !isUnifiedPlatform(capability) && !isEmuSim(capability)) {
+export function makeCapabilityFactory(tunnelName: string) {
+    return (capability: WebdriverIO.Capabilities) => {
+        // If the `sauce:options` are not provided and it is a W3C session then add it
+        if (!capability['sauce:options']) {
             capability['sauce:options'] = {}
         }
 
-        Object.assign(capability, options)
-
-        const sauceOptions = (!isLegacy && !isUnifiedPlatform(capability) && !isEmuSim(capability) ? capability['sauce:options'] : capability) as SauceServiceConfig
-        sauceOptions.tunnelIdentifier = (
-            capability.tunnelIdentifier ||
-            sauceOptions.tunnelIdentifier ||
-            tunnelIdentifier
-        )
-
-        if (!isLegacy && !isUnifiedPlatform(capability) && !isEmuSim(capability)) {
-            delete capability.tunnelIdentifier
-        }
+        capability['sauce:options'].tunnelName = (capability['sauce:options'].tunnelName || tunnelName)
     }
+}
+
+export function ansiRegex() {
+    const pattern = [
+        '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
+        '(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
+    ].join('|')
+
+    return new RegExp(pattern, 'g')
 }

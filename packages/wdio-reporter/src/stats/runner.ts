@@ -1,7 +1,7 @@
 import type { Capabilities, Options } from '@wdio/types'
 
-import RunnableStats from './runnable'
-import { sanitizeCaps } from '../utils'
+import RunnableStats from './runnable.js'
+import { sanitizeCaps } from '../utils.js'
 
 /**
  * Class to capture statistics about a test run. A test run is a single instance that
@@ -9,7 +9,7 @@ import { sanitizeCaps } from '../utils'
  */
 export default class RunnerStats extends RunnableStats {
     cid: string
-    capabilities: Capabilities.RemoteCapability
+    capabilities: Capabilities.ResolvedTestrunnerCapabilities
     sanitizedCapabilities: string
     config: Options.Testrunner
     specs: string[]
@@ -19,6 +19,7 @@ export default class RunnerStats extends RunnableStats {
     retry?: number
     failures?: number
     retries?: number
+    error?: string
 
     constructor (runner: Options.RunnerStart) {
         super('runner')

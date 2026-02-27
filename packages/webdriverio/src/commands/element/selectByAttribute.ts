@@ -1,4 +1,7 @@
-import { getElementFromResponse } from '../../utils'
+import { ELEMENT_KEY } from 'webdriver'
+import type { ElementReference } from '@wdio/protocols'
+
+import { getElementFromResponse } from '../../utils/index.js'
 
 /**
  *
@@ -15,27 +18,27 @@ import { getElementFromResponse } from '../../utils'
         <option name="someName5" value="someValue5">seis</option>
     </select>
     :selectByAttribute.js
-    it('Should demonstrate the selectByAttribute command', () => {
-        const selectBox = $('#selectbox');
-        const value = selectBox.getValue();
+    it('Should demonstrate the selectByAttribute command', async () => {
+        const selectBox = await $('#selectbox');
+        const value = await selectBox.getValue();
         console.log(value); // returns "someValue0"
 
-        selectBox.selectByAttribute('value', 'someValue3');
-        console.log(selectBox.getValue()); // returns "someValue3"
+        await selectBox.selectByAttribute('value', 'someValue3');
+        console.log(await selectBox.getValue()); // returns "someValue3"
 
-        selectBox.selectByAttribute('name', 'someName5');
-        console.log(selectBox.getValue()); // returns "someValue5"
+        await selectBox.selectByAttribute('name', 'someName5');
+        console.log(await selectBox.getValue()); // returns "someValue5"
     });
  * </example>
  *
  * @alias element.selectByAttribute
- * @param {String} attribute     attribute of option element to get selected
+ * @param {string} attribute     attribute of option element to get selected
  * @param {String|Number} value  value of option element to get selected
  * @uses protocol/findElementFromElement, protocol/elementClick
  * @type action
  *
  */
-export default async function selectByAttribute (
+export async function selectByAttribute (
     this: WebdriverIO.Element,
     attribute: string,
     value: string | number
@@ -51,15 +54,17 @@ export default async function selectByAttribute (
     * find option elememnt using xpath
     */
     const normalized = `[normalize-space(@${attribute.trim()}) = "${value.trim()}"]`
-    const optionElement = await this.findElementFromElement(
-        this.elementId,
-        'xpath',
-        `./option${normalized}|./optgroup/option${normalized}`
-    )
-
-    if (optionElement && (optionElement as any).error === 'no such element') {
-        throw new Error(`Option with attribute "${attribute}=${value}" not found.`)
-    }
+    let optionElement: ElementReference | undefined
+    await this.waitUntil(async () => {
+        optionElement = await this.findElementFromElement(
+            this.elementId,
+            'xpath',
+            `./option${normalized}|./optgroup/option${normalized}`
+        )
+        return ELEMENT_KEY in optionElement
+    }, {
+        timeoutMsg: `Option with attribute "${attribute}=${value}" not found.`
+    })
 
     /**
     * select option

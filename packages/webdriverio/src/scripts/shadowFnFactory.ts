@@ -1,6 +1,6 @@
 // generate a function that can be used to query shadowRoots
 export const shadowFnFactory = function(elementSelector: string, qsAll = false) {
-    const strFn = `
+    const strFn = /*js*/`
     (function() {
       // element has a shadowRoot property
       if (this.shadowRoot) {
@@ -9,5 +9,5 @@ export const shadowFnFactory = function(elementSelector: string, qsAll = false) 
       // fall back to querying the element directly if not
       return this.querySelector${qsAll ? 'All' : ''}('${elementSelector}')
     })`
-    return eval(strFn)
+    return (0, eval)(strFn)
 }

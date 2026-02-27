@@ -1,5 +1,4 @@
-import fs from 'fs'
-import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
+import { environment } from '../../environment.js'
 
 /**
  *
@@ -7,16 +6,16 @@ import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
  *
  * :::info
  *
- * This command is only supported for mobile sessions running on [Appium](http://appium.io/docs/en/commands/device/recording-screen/start-recording-screen/).
+ * This command is only supported for mobile sessions running on [Appium](https://appium.github.io/appium.io/docs/en/commands/device/recording-screen/start-recording-screen/).
  *
  * :::
  *
  * <example>
     :saveRecordingScreen.js
-    it('should save a video', () => {
-        browser.startRecordingScreen();
-        $('~BUTTON').click();
-        browser.saveRecordingScreen('./some/path/video.mp4');
+    it('should save a video', async () => {
+        await browser.startRecordingScreen();
+        await $('~BUTTON').click();
+        await browser.saveRecordingScreen('./some/path/video.mp4');
     });
  * </example>
  *
@@ -26,23 +25,12 @@ import { getAbsoluteFilepath, assertDirectoryExists } from '../../utils'
  * @type utility
  *
  */
-export default async function saveRecordingScreen (
+export async function saveRecordingScreen (
     this: WebdriverIO.Browser,
     filepath: string
-) {
+): Promise<Buffer<ArrayBuffer>> {
     /**
-     * type check
+     * run command implementation based on given environment
      */
-    if (typeof filepath !== 'string') {
-        throw new Error('saveRecordingScreen expects a filepath')
-    }
-
-    const absoluteFilepath = getAbsoluteFilepath(filepath)
-    assertDirectoryExists(absoluteFilepath)
-
-    const videoBuffer = await this.stopRecordingScreen()
-    const video = Buffer.from(videoBuffer, 'base64')
-    fs.writeFileSync(absoluteFilepath, video)
-
-    return video
+    return environment.value.saveRecordingScreen.call(this, filepath)
 }

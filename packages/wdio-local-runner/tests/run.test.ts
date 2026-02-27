@@ -1,31 +1,48 @@
-import exitHook from 'async-exit-hook'
+import path from 'node:path'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
+
 // @ts-ignore mock exports instances, package doesn't
 import { instances } from '@wdio/runner'
 
-const expect = global.expect as unknown as jest.Expect
+vi.mock('@wdio/runner', () => import(path.join(process.cwd(), '__mocks__', '@wdio/runner')))
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
-jest.mock('../src/constants', () => ({
-    SHUTDOWN_TIMEOUT: 1
+let exitHookCallback: Function | undefined
+const exitHookMock = vi.fn((callback: Function) => {
+    exitHookCallback = callback
+    return () => {} // return unsubscribe function
+})
+
+const gracefulExitMock = vi.fn()
+
+vi.mock('exit-hook', () => ({
+    default: exitHookMock,
+    asyncExitHook: exitHookMock,
+    gracefulExit: gracefulExitMock
+}))
+
+vi.mock('../src/constants', () => ({
+    SHUTDOWN_TIMEOUT: 10
 }))
 
 const sleep = (ms = 100) => new Promise(
     (resolve) => setTimeout(resolve, ms))
 
-let exitHookFn: Function
 let runner: any
 const origExit = process.exit.bind(process)
 
-beforeAll(() => {
-    jest.spyOn(process, 'on')
-    jest.spyOn(process, 'send')
-    process.exit = jest.fn() as any
-    const run = require('../src/run.ts')
-    exitHookFn = run.exitHookFn
+beforeAll(async () => {
+    vi.spyOn(process, 'on')
+    process.send = vi.fn()
+    process.exit = vi.fn() as any
+
+    const run = await import('../src/run.js')
     runner = run.runner
 })
 
 test('should register exitHook', () => {
-    expect(exitHook).toHaveBeenCalled()
+    expect(exitHookMock).toHaveBeenCalled()
+    expect(exitHookCallback).toBeDefined()
 })
 
 test('should have registered runner listener', () => {
@@ -40,12 +57,12 @@ test('should have registered runner listener', () => {
 })
 
 test('should not call runner if message is undefined', () => {
-    (process.on as jest.Mock).mock.calls[0][1](false)
+    vi.mocked(process.on).mock.calls[0][1](false)
 })
 
 test('should call runner command on process message', async () => {
     expect(instances[0].run).toHaveBeenCalledTimes(0)
-    ;(process.on as jest.Mock).mock.calls[0][1]({
+    vi.mocked(process.on).mock.calls[0][1]({
         command: 'run',
         foo: 'bar'
     })
@@ -53,40 +70,64 @@ test('should call runner command on process message', async () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(process.send).toHaveBeenCalledWith({
         origin: 'worker',
-        name: 'finisedCommand',
+        name: 'finishedCommand',
         content: { command: 'run', result: { foo: 'bar' } }
     })
 })
 
 test('should exit process if failing to execute', async () => {
-    runner.errorMe = jest.fn().mockReturnValue(Promise.reject(new Error('Uups')))
-    ;(process.on as jest.Mock).mock.calls[0][1]({
+    runner.errorMe = vi.fn().mockReturnValue(Promise.reject(new Error('Uups')))
+    vi.mocked(process.on).mock.calls[0][1]({
         command: 'errorMe',
         foo: 'bar'
     })
-    expect(instances[0].errorMe).toHaveBeenCalledTimes(1)
+    expect((await instances[0]).errorMe).toHaveBeenCalledTimes(1)
     await sleep()
-    expect(process.exit).toBeCalledWith(1)
+    expect(gracefulExitMock).toBeCalledWith(1)
 
 })
 
-test('exitHookFn do nothing if no callback is provided', async () => {
-    exitHookFn()
-    await sleep()
-    expect(runner.sigintWasCalled).toBe(undefined)
+test('should call gracefulExit with exit code on exit', () => {
+    const exitListener = instances[0].on.mock.calls.find(([event]: [string]) => event === 'exit')?.[1]
+    expect(exitListener).toBeDefined()
+    exitListener?.(5)
+    expect(gracefulExitMock).toHaveBeenCalledWith(5)
 })
 
-test('exitHookFn should call callback after shutdown timeout', async () => {
-    const cb = jest.fn()
-    exitHookFn(cb)
+test('should call gracefulExit(130) and set sigintWasCalled on SIGINT', () => {
+    // Find SIGINT listener
+    const sigintListener = vi.mocked(process.on).mock.calls.find(([event]) => event === 'SIGINT')?.[1]
+    expect(sigintListener).toBeDefined()
+    sigintListener?.()
     expect(runner.sigintWasCalled).toBe(true)
-    expect(cb).toHaveBeenCalledTimes(0)
-    await sleep()
-    expect(cb).toHaveBeenCalledTimes(1)
+    expect(gracefulExitMock).toHaveBeenCalledWith(130)
+})
+
+test('should delay shutdown in exitHook if SIGINT was received', async () => {
+    runner.sigintWasCalled = true
+    const startTime = process.hrtime.bigint()
+    await exitHookCallback?.()
+    const endTime = process.hrtime.bigint()
+    // Should wait at least SHUTDOWN_TIMEOUT (10ms in test due to mock)
+    // Use nanosecond precision and allow for 9ms minimum to account for timing variance
+    const elapsedMs = Number(endTime - startTime) / 1_000_000
+    expect(elapsedMs).toBeGreaterThanOrEqual(9)
+})
+
+test('should not delay in exitHook if SIGINT was not received', async () => {
+    runner.sigintWasCalled = false
+    const startTime = process.hrtime.bigint()
+    await exitHookCallback?.()
+    const endTime = process.hrtime.bigint()
+    // Should not wait (almost immediate) when sigintWasCalled = false
+    // Allow up to 5ms for normal async overhead
+    const elapsedMs = Number(endTime - startTime) / 1_000_000
+    expect(elapsedMs).toBeLessThan(5)
 })
 
 afterAll(() => {
-    (process.on as jest.Mock).mockRestore()
-    ;(process.send as jest.Mock).mockRestore()
+    vi.mocked(process.on).mockRestore()
+    vi.mocked(process.send)!.mockRestore()
+    gracefulExitMock.mockReset()
     process.exit = origExit
 })

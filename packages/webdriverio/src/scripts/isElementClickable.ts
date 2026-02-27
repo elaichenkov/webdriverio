@@ -9,9 +9,9 @@ export default function isElementClickable (elem: HTMLElement) {
     }
 
     // Edge before switching to Chromium
-    const isOldEdge = !!window.StyleMedia
+    const isOldEdge = !!(window as unknown as { StyleMedia: unknown }).StyleMedia
     // returns true for Chrome and Firefox and false for Safari, Edge and IE
-    const scrollIntoViewFullSupport = !((window as any).safari || isOldEdge)
+    const scrollIntoViewFullSupport = !((window as { safari?: boolean }).safari || isOldEdge)
 
     // get overlapping element
     function getOverlappingElement (elem: HTMLElement, context?: Document) {
@@ -26,16 +26,13 @@ export default function isElementClickable (elem: HTMLElement) {
     // applicable if element's text is multiline.
     function getOverlappingRects (elem: HTMLElement, context?: Document) {
         context = context || document
-        const elems = []
 
         const rects = elem.getClientRects()
         // webdriver clicks on center of the first element's rect (line of text), it might change in future
         const rect = rects[0]
         const x = rect.left + (rect.width / 2)
         const y = rect.top + (rect.height / 2)
-        elems.push(context.elementFromPoint(x, y))
-
-        return elems
+        return [context.elementFromPoint(x, y)]
     }
 
     // get overlapping elements
@@ -78,15 +75,15 @@ export default function isElementClickable (elem: HTMLElement) {
         // @ts-ignore
         let elemsWithShadowRoot = [].concat(elementsFromPoint)
         elemsWithShadowRoot = elemsWithShadowRoot.filter(function (x: HTMLElement) {
-            return x && x.shadowRoot && x.shadowRoot.elementFromPoint
+            return x && x.shadowRoot && (x.shadowRoot as ShadowRoot).elementFromPoint
         })
 
         // getOverlappingElements of every element with shadowRoot
         let shadowElementsFromPoint: HTMLElement[] = []
         for (let i = 0; i < elemsWithShadowRoot.length; ++i) {
-            let shadowElement = elemsWithShadowRoot[i]
+            const shadowElement = elemsWithShadowRoot[i]
             shadowElementsFromPoint = shadowElementsFromPoint.concat(
-                getOverlappingElements(elem, (shadowElement as HTMLElement).shadowRoot as any) as any
+                getOverlappingElements(elem, (shadowElement as HTMLElement).shadowRoot as unknown as Document) as HTMLElement[]
             )
         }
         // remove duplicates and parents
@@ -114,33 +111,52 @@ export default function isElementClickable (elem: HTMLElement) {
         const windowHeight = (window.innerHeight || document.documentElement.clientHeight)
         const windowWidth = (window.innerWidth || document.documentElement.clientWidth)
 
-        const vertInView = (rect.top <= windowHeight) && ((rect.top + rect.height) > 0)
-        const horInView = (rect.left <= windowWidth) && ((rect.left + rect.width) > 0)
+        const vertInView = (rect.top < windowHeight) && ((rect.top + rect.height) > 0)
+        const horInView = (rect.left < windowWidth) && ((rect.left + rect.width) > 0)
 
         return (vertInView && horInView)
     }
 
-    function isClickable (elem: any) {
-        return (
-            isElementInViewport(elem) && elem.disabled !== true &&
-            isOverlappingElementMatch(getOverlappingElements(elem) as any as HTMLElement[], elem)
-        )
+    function isEnabled(elem: HTMLFormElement) {
+        return elem.disabled !== true
     }
 
-    // scroll to the element if it's not clickable
-    if (!isClickable(elem)) {
-        // works well in dialogs, but the element may be still overlapped by some sticky header/footer
-        elem.scrollIntoView(scrollIntoViewFullSupport ? { block: 'nearest', inline: 'nearest' } : false)
+    function hasOverlaps(elem: HTMLElement) {
+        return !isOverlappingElementMatch(getOverlappingElements(elem) as unknown as HTMLElement[], elem)
+    }
 
-        // if element is still not clickable take another scroll attempt
-        if (!isClickable(elem)) {
-            // scroll to element, try put it in the screen center.
-            // Should definitely work even if element was covered with sticky header/footer
-            elem.scrollIntoView(scrollIntoViewFullSupport ? { block: 'center', inline: 'center' } : true)
+    function isFullyDisplayedInViewport(elem: HTMLElement) {
+        return isElementInViewport(elem) && !hasOverlaps(elem)
+    }
 
-            return isClickable(elem)
+    function getViewportScrollPositions() {
+        // Cross-browser compatibility
+        return {
+            x: window.scrollX !== null && window.scrollX !== void 0
+                ? window.scrollX
+                : window.pageXOffset,
+            y: window.scrollY !== null && window.scrollY !== void 0
+                ? window.scrollY
+                : window.pageYOffset,
         }
     }
 
-    return true
+    // scroll the element to the center of the viewport when
+    // it is not fully displayed in the viewport or is overlapped by another element
+    // to check if it still overlapped/not in the viewport
+    // afterwards we scroll back to the original position
+    let _isFullyDisplayedInViewport = isFullyDisplayedInViewport(elem)
+    if (!_isFullyDisplayedInViewport) {
+        const { x: originalX, y: originalY } = getViewportScrollPositions()
+
+        elem.scrollIntoView(scrollIntoViewFullSupport ? { block: 'center', inline: 'center' } : false)
+
+        _isFullyDisplayedInViewport = isFullyDisplayedInViewport(elem)
+        const { x: currentX, y: currentY } = getViewportScrollPositions()
+        if (currentX !== originalX || currentY !== originalY) {
+            window.scroll(originalX, originalY)
+        }
+    }
+
+    return _isFullyDisplayedInViewport && isEnabled(elem as HTMLFormElement)
 }

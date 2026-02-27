@@ -1,4 +1,9 @@
-exports.config = {
+import path from 'node:path'
+import url from 'node:url'
+
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+
+export const config = {
     /**
      * capabilities
      */
@@ -15,11 +20,11 @@ exports.config = {
 
     reporters: ['spec'],
     services: ['webdriver-mock'],
+    execArgv: ['--expose-gc'],
 
     mochaOpts: {
         ui: 'bdd',
         timeout: 10000,
-        require: ['ts-node/register'],
         grep: 'SKIPPED_GREP',
         invert: true
     },
@@ -28,12 +33,12 @@ exports.config = {
         defaultTimeoutInterval: 1000 * 60 * 3,
         grep: 'SKIPPED_GREP',
         invertGrep: true,
-        require: ['ts-node/register']
+        require: ['tsx'],
     },
 
     cucumberOpts: {
         timeout: 5000,
-        requireModule: ['ts-node/register'],
-        require: ['./tests/cucumber/step-definitions/*.js']
-    },
+        requireModule: ['tsx'],
+        require: [path.resolve(__dirname, '..', 'cucumber', 'step-definitions', '*.js')]
+    }
 }

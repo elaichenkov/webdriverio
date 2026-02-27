@@ -1,10 +1,12 @@
-import WDIORunner from '../src'
-import BaseReporter from '../src/reporter'
-import type { SingleConfigOption, Capability } from '@wdio/config'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-jest.mock('../src/utils', () => ({
+import WDIORunner from '../src/index.js'
+import type BaseReporter from '../src/reporter.js'
+import type { Options } from '@wdio/types'
+
+vi.mock('../src/utils', () => ({
     __esModule: true,
-    initialiseInstance() {
+    initializeInstance() {
         return {
             '$'() { },
             '$$'() { },
@@ -19,8 +21,8 @@ jest.mock('../src/utils', () => ({
     }
 }))
 
-const config = {} as any as SingleConfigOption
-const capability: Capability = { browserName: 'foo' }
+const config: Options.WebdriverIO = { capabilities: {} }
+const capability: WebdriverIO.Capabilities = { browserName: 'foo' }
 
 describe('wdio-runner', () => {
     describe('_initSession', () => {
@@ -29,12 +31,12 @@ describe('wdio-runner', () => {
         beforeEach(() => {
             runner = new WDIORunner()
             runner['_reporter'] = {
-                emit: jest.fn()
+                emit: vi.fn()
             } as unknown as BaseReporter
         })
 
         it('command event', async () => {
-            const browser = await runner._initSession(config, capability)
+            const browser = await runner['_initSession'](config, capability)
 
             const command = { foo: 'bar' }
             // @ts-ignore mock feature
@@ -44,25 +46,13 @@ describe('wdio-runner', () => {
         })
 
         it('result event', async () => {
-            const browser = await runner._initSession(config, capability)
+            const browser = await runner['_initSession'](config, capability)
 
             const result = { bar: 'foo' }
             // @ts-ignore mock feature
             browser.events.result(result)
 
             expect(result).toEqual({ bar: 'foo', sessionId: 'id' })
-        })
-
-        it('should add user flags to browser but not overwrite', async () => {
-            // @ts-ignore test scenario
-            const browser = await runner._initSession(undefined, undefined, { isFoo: true, $: true, $$: false, isBar: true })
-
-            expect(typeof browser!.$).toBe('function')
-            expect(typeof browser!.$$).toBe('function')
-            // @ts-ignore test scenario
-            expect(browser.isFoo).toBe(true)
-            // @ts-ignore test scenario
-            expect(browser.isBar).toBe(false)
         })
     })
 })

@@ -1,8 +1,15 @@
-const { config } = require('./config')
+import { setResourcePool, setValue } from '@wdio/shared-store-service'
+import { config as baseConfig } from './config.js'
 
-exports.config = Object.assign({}, config, {
-    beforeSuite () {
-        browser.sharedStore.set(browser.sessionId, browser.capabilities)
+export const config = Object.assign({}, baseConfig, {
+    async onPrepare () {
+        await setResourcePool('availableUrls', ['url01.com', 'url02.com'])
+        await setValue('testKey', 'testValue')
     },
-    services: [...config.services, 'shared-store']
+
+    async beforeSuite () {
+        await browser.sharedStore.setResourcePool('test-resource-pool', [1, 2, 3])
+        await browser.sharedStore.set(browser.sessionId, browser.capabilities)
+    },
+    services: [...baseConfig.services, 'shared-store']
 })

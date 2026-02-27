@@ -1,27 +1,44 @@
-import { Transform, TransformCallback } from 'stream'
-import { DEBUGGER_MESSAGES } from './constants'
+import split from 'split2'
+import type { Readable, TransformCallback } from 'node:stream'
+import { Transform } from 'node:stream'
+import { DEBUGGER_MESSAGES } from './constants.js'
 
-export default class RunnerTransformStream extends Transform {
-    cid: string
+export default function runnerTransformStream(cid: string, inputStream: Readable, aggregator?: string[]): Readable {
+    return inputStream
+        .pipe(split(/\r?\n/, line => `${line}\n`))
+        .pipe(ignore(DEBUGGER_MESSAGES))
+        .pipe(map((line) => {
+            const newLine = `[${cid}] ${line}`
+            aggregator?.push(newLine)
+            return newLine
+        }))
+}
 
-    constructor (cid: string) {
-        super()
-        this.cid = cid
-    }
+function ignore(patternsToIgnore: string[]) {
+    return new Transform({
+        decodeStrings: false,
+        transform(chunk, encoding, next) {
+            if (patternsToIgnore.some(m => chunk.startsWith(m))) {
+                return next()
+            }
+            return next(null, chunk)
+        },
+        final(next: TransformCallback): void {
+            this.unpipe()
+            next()
+        },
+    })
+}
 
-    _transform (chunk: any, encoding: BufferEncoding, callback: TransformCallback): void {
-        const logMsg = chunk.toString()
-
-        if (DEBUGGER_MESSAGES.some(m => logMsg.startsWith(m))) {
-            return callback()
-        }
-
-        this.push(`[${this.cid}] ${logMsg}`)
-        callback()
-    }
-
-    _final (callback: (error?: Error | null) => void): void {
-        this.unpipe()
-        callback()
-    }
+function map(mapper: (line: Buffer) => string) {
+    return new Transform({
+        decodeStrings: false,
+        transform(chunk: Buffer, encoding: BufferEncoding, next: TransformCallback) {
+            return next(null, mapper(chunk))
+        },
+        final(next: TransformCallback): void {
+            this.unpipe()
+            next()
+        },
+    })
 }

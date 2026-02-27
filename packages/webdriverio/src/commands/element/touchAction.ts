@@ -1,7 +1,20 @@
-import { touchAction as touchActionCommand } from '../constant'
-import type { TouchActions } from '../../types'
+import { touchAction as touchActionCommand } from '../constant.js'
+import type { TouchActions } from '../../types.js'
 
 /**
+ * :::caution Deprecation Warning
+ *
+ * The `touchAction` command is __deprecated__ and will be removed in a future version.
+ * We recommend to use the [`action`](/docs/api/browser/action) command instead with
+ * pointer type `touch`, e.g.:
+ *
+ * ```ts
+ * await browser.action('pointer', {
+ *   parameters: { pointerType: 'touch' }
+ * })
+ * ```
+ *
+ * :::
  *
  * The Touch Action API provides the basis of all gestures that can be automated in Appium.
  * It is currently only available to native apps and can not be used to interact with webapps.
@@ -17,28 +30,28 @@ import type { TouchActions } from '../../types'
  *
  * <example>
     :touchAction.js
-    it('should do a touch gesture', function () {
-        const screen = $('//UITextbox');
+    it('should do a touch gesture', async () => {
+        const screen = await $('//UITextbox');
 
         // simple touch action on element
-        screen.touchAction('tap');
+        await screen.touchAction('tap');
 
         // simple touch action using selector and x y variables
         // tap location is 30px right and 20px down relative from the center of the element
-        screen.touchAction({
+        await screen.touchAction({
             action: 'tap', x: 30, y:20
         })
 
         // multi action on an element (drag&drop)
-        screen.touchAction([
+        await screen.touchAction([
             'press',
             { action: 'moveTo', x: 200, y: 300 },
             'release'
         ])
 
         // drag&drop to element
-        const otherElement = $('//UIAApplication[1]/UIAElement[2]')
-        screen.touchAction([
+        const otherElement = await $('//UIAApplication[1]/UIAElement[2]')
+        await screen.touchAction([
             'press',
             { action: 'moveTo', element: otherElement },
             'release'
@@ -52,7 +65,7 @@ import type { TouchActions } from '../../types'
  * @for android, ios
  *
  */
-export default function touchAction (
+export function touchAction (
     this: WebdriverIO.Element,
     actions: TouchActions
 ) {

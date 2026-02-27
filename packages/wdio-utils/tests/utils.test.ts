@@ -1,16 +1,23 @@
-import fs from 'fs'
+import path from 'node:path'
+import fs from 'node:fs/promises'
+import type { MockedFunction } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 import {
-    overwriteElementCommands, commandCallStructure, isValidParameter, canAccess,
-    getArgumentType, isFunctionAsync, filterSpecArgs, isBase64, transformCommandLogResult
-} from '../src/utils'
-
-jest.mock('fs')
+    overwriteElementCommands, commandCallStructure, isValidParameter, definesRemoteDriver,
+    getArgumentType, isFunctionAsync, filterSpecArgs, isBase64, transformCommandLogResult,
+    userImport, getBrowserObject, enableFileLogging, isAppiumCapability,
+    isAbsolute
+} from '../src/utils.js'
 
 describe('utils', () => {
     it('commandCallStructure', () => {
         const stringFunction = 'return (function () => { })()'
+        const asyncStringFunction = 'return (async function () => { })()'
         const anotherStringFunction = '!function(t,e){}'
+        const normalStringFunction = `
+            function webdriverioPolyfill() {`
+        const shortStringFunction = '() => { // ... }'
         expect(commandCallStructure(
             'foobar',
             [
@@ -20,12 +27,15 @@ describe('utils', () => {
                 { a: 123 },
                 () => true,
                 stringFunction,
+                asyncStringFunction,
                 anotherStringFunction,
+                normalStringFunction,
+                shortStringFunction,
                 null,
                 undefined,
                 (Buffer.from('some screenshot')).toString('base64')
             ]
-        )).toBe('foobar("param", 1, true, <object>, <fn>, <fn>, <fn>, null, undefined, "<Screenshot[base64]>")')
+        )).toBe('foobar("param", 1, true, <object>, <fn>, <fn>, <fn>, <fn>, <fn>, <fn>, null, undefined, "<Screenshot[base64]>")')
         expect(commandCallStructure('foobar', ['/html/body/a']))
             .toBe('foobar("<Screenshot[base64]>")')
         expect(commandCallStructure('findElement', ['/html/body/a']))
@@ -36,18 +46,35 @@ describe('utils', () => {
             .toBe('findElementFromElement("/html/body/a")')
         expect(commandCallStructure('findElementsFromElement', ['/html/body/a']))
             .toBe('findElementsFromElement("/html/body/a")')
+        expect(commandCallStructure('switchToWindow', ['9A562133B0552E0ECB7628F2E8A09E86']))
+            .toBe('switchToWindow("9A562133B0552E0ECB7628F2E8A09E86")')
+        expect(commandCallStructure('switchFrame', ['9A562133B0552E0ECB7628F2E8A09E86']))
+            .toBe('switchFrame("9A562133B0552E0ECB7628F2E8A09E86")')
     })
 
     it('transformCommandLogResult', () => {
         expect(transformCommandLogResult({ file: 'bar' })).toEqual({ file: 'bar' })
         expect(transformCommandLogResult({ file: (Buffer.from('some screenshot')).toString('base64') }))
             .toBe('"<Screenshot[base64]>"')
+
+        expect(transformCommandLogResult({ script: 'foo' })).toEqual({ script: 'foo' })
+        expect(transformCommandLogResult({ script: (Buffer.from('some script payload')).toString('base64') }))
+            .toBe('"<Script[base64]>"')
+
+        expect(transformCommandLogResult({ script: 'return foobar' })).toEqual({ script: 'return foobar' })
+        expect(transformCommandLogResult({ script: 'return (function isElementDisplayed(element) {\n...' }))
+            .toEqual({ script: 'isElementDisplayed(...) [50 bytes]' })
+        expect(transformCommandLogResult({ script: 'return (async function isElementDisplayed(element) {\n...' }))
+            .toEqual({ script: 'isElementDisplayed(...) [56 bytes]' })
+
+        expect(transformCommandLogResult({ script: '!function(t,e){"object"==typeof exports&&"object"==typeof mod...' }))
+            .toEqual({ script: '<minified function> [64 bytes]' })
     })
 
     describe('overwriteElementCommands', () => {
         it('should overwrite command', function () {
             const context = {}
-            const origFnMock: (arg: any) => void = jest.fn(() => 1)
+            const origFnMock: (arg: any) => void = vi.fn(() => 1)
             const propertiesObject = {
                 foo: { value: origFnMock },
                 __elementOverrides__: {
@@ -57,15 +84,15 @@ describe('utils', () => {
             overwriteElementCommands.call(context, propertiesObject)
             expect(propertiesObject.foo.value(5))
                 .toEqual([1, 5])
-            expect((origFnMock as jest.Mock).mock.calls.length)
+            expect((origFnMock as MockedFunction<any>).mock.calls.length)
                 .toBe(1)
-            expect((origFnMock as jest.Mock).mock.instances[0])
+            expect((origFnMock as MockedFunction<any>).mock.instances[0])
                 .toBe(propertiesObject.foo)
         })
 
         it('should support rebinding when invoking original fn', function () {
             const context = {}
-            const origFnMock: (arg: any) => void = jest.fn(() => 1)
+            const origFnMock: (arg: any) => void = vi.fn(() => 1)
             const origFnContext = {}
             const propertiesObject = {
                 foo: { value: origFnMock },
@@ -76,9 +103,9 @@ describe('utils', () => {
             overwriteElementCommands.call(context, propertiesObject)
             expect(propertiesObject.foo.value(5))
                 .toEqual([1, 5])
-            expect((origFnMock as jest.Mock).mock.calls.length)
+            expect((origFnMock as MockedFunction<any>).mock.calls.length)
                 .toBe(1)
-            expect((origFnMock as jest.Mock).mock.instances[0])
+            expect((origFnMock as MockedFunction<any>).mock.instances[0])
                 .toBe(origFnContext)
         })
 
@@ -98,7 +125,7 @@ describe('utils', () => {
 
         it('should throw if there is no command to be propertiesObject', function () {
             const propertiesObject = { __elementOverrides__: { value: {
-                foo: jest.fn()
+                foo: vi.fn()
             } } }
             expect(() => overwriteElementCommands.call(null, propertiesObject))
                 .toThrow('overwriteCommand: no command to be overwritten: foo')
@@ -106,7 +133,7 @@ describe('utils', () => {
 
         it('should throw on attempt to overwrite not a function', function () {
             const propertiesObject = { foo: 'bar', __elementOverrides__: { value: {
-                foo: jest.fn()
+                foo: vi.fn()
             } } }
             expect(() => overwriteElementCommands.call(null, propertiesObject))
                 .toThrow('overwriteCommand: only functions can be overwritten, command: foo')
@@ -170,6 +197,17 @@ describe('utils', () => {
             expect(isFunctionAsync({} as unknown as Function)).toBe(false)
         })
     })
+
+    it('definesRemoteDriver', () => {
+        expect(definesRemoteDriver({})).toBe(false)
+        expect(definesRemoteDriver({ hostname: 'foo' })).toBe(true)
+        expect(definesRemoteDriver({ port: 1 })).toBe(true)
+        expect(definesRemoteDriver({ path: 'foo' })).toBe(true)
+        expect(definesRemoteDriver({ protocol: 'foo' })).toBe(true)
+        expect(definesRemoteDriver({ user: 'foo' })).toBe(false)
+        expect(definesRemoteDriver({ key: 'foo' })).toBe(false)
+        expect(definesRemoteDriver({ user: 'foo', key: 'bar' })).toBe(true)
+    })
 })
 
 describe('utils:filterSpecArgs', () => {
@@ -206,15 +244,105 @@ describe('utils:isBase64', () => {
     })
 })
 
-describe('utils:canAccess', () => {
-    it('canAccess', () => {
-        expect(canAccess('/foobar')).toBe(true)
-        expect(fs.accessSync).toBeCalledWith('/foobar')
+describe('utils:userImport', () => {
+    it('should import module', async () => {
+        const mod = await userImport('path')
+        expect(mod).toEqual(path)
+        const join = await userImport('path', 'join')
+        expect(join).toEqual(path.join)
+    })
 
-        // @ts-ignore
-        fs.accessSync.mockImplementation(() => {
-            throw new Error('upps')
-        })
-        expect(canAccess('/foobar')).toBe(false)
+    it('throws error message if named import not found', async () => {
+        await expect(userImport('path', 'foo'))
+            .rejects
+            .toThrow('Couldn\'t find "foo" in module "path"')
+    })
+
+    it('throws error message if module not found', async () => {
+        await expect(userImport('foobar'))
+            .rejects
+            .toThrow('Couldn\'t import "foobar"! Do you have it installed? If not run "npm install foobar"!')
+    })
+})
+
+describe('utils:isAbsolute', () => {
+    it.each([
+        [true, 'absolute path for POSIX systems', '/path/to/file',],
+        [true, 'absolute path for Windows system', 'c:\\path\\to\\file'],
+        [false, 'relative path for POSIX system', 'path/to/file'],
+        [false, 'relative path for Windows system', 'path\\to\\file'],
+        [false, 'UNC path for Windows system', '\\\\server\\path\\to\\file'],
+        [false, 'null value', ''],
+    ])('should return %s when input %s', (expected:boolean, _pattern:string, pathString:string)=>{
+        expect(isAbsolute(pathString)).toBe(expected)
+    })
+
+})
+
+describe('getBrowserObject', () => {
+    it('should traverse up', () => {
+        expect(getBrowserObject({
+            parent: {
+                parent: {
+                    parent: {
+                        foo: 'bar'
+                    }
+                }
+            }
+        } as any)).toEqual({ foo: 'bar' })
+    })
+})
+
+describe('enableFileLogging', () => {
+    beforeEach(() => {
+        vi.mock('node:fs/promises', () => ({
+            default: {
+                mkdir: vi.fn(),
+            }
+        }))
+
+        delete process.env.WDIO_LOG_PATH
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it ('should do nothing if outputDir is not provided', async () => {
+        await enableFileLogging()
+
+        expect(fs.mkdir).not.toHaveBeenCalled()
+        expect(process.env.WDIO_LOG_PATH).toBeUndefined()
+    })
+
+    it('should create a directory and set WDIO_LOG_PATH to the directory path if outputDir is provided', async () => {
+        const outputDir = '/path/to/log/directory'
+        const expectedLogPath = path.join(outputDir, 'wdio.log')
+
+        await enableFileLogging(outputDir)
+
+        expect(fs.mkdir).toHaveBeenCalledWith(path.join(outputDir), { recursive: true })
+        expect(process.env.WDIO_LOG_PATH).toBe(expectedLogPath)
+    })
+})
+
+describe('isAppiumCapability', () => {
+    it('should return true if it indicates an Appium capability', () => {
+        expect(isAppiumCapability({})).toBe(false)
+        expect(isAppiumCapability({ browserName: 'chrome' })).toBe(false)
+        // @ts-expect-error outdated jsonwp cap
+        expect(isAppiumCapability({ automationName: 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:automationName': 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:options': { automationName: 'android' } })).toBe(true)
+        // @ts-expect-error outdated jsonwp cap
+        expect(isAppiumCapability({ deviceName: 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:deviceName': 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:options': { deviceName: 'android' } })).toBe(true)
+        expect(isAppiumCapability({ 'lt:options': { deviceName: 'android' } })).toBe(true)
+        // @ts-expect-error outdated jsonwp cap
+        expect(isAppiumCapability({ appiumVersion: 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:appiumVersion': 'android' })).toBe(true)
+        expect(isAppiumCapability({ 'appium:options': { appiumVersion: 'android' } })).toBe(true)
+        expect(isAppiumCapability({ 'lt:options': { appiumVersion: 'android' } })).toBe(true)
     })
 })

@@ -1,9 +1,9 @@
 import type { Options } from '@wdio/types'
 
-declare type HTTPRequestOptions = import('got').Options;
-declare type HTTPResponse = import('got').Response;
+import { environment } from './environment.js'
+import type { RemoteConfig } from './types.js'
 
-export const DEFAULTS: Options.Definition<Required<Options.WebDriver>> = {
+export const DEFAULTS: Options.Definition<Required<RemoteConfig>> = {
     /**
      * protocol of automation driver
      */
@@ -23,8 +23,7 @@ export const DEFAULTS: Options.Definition<Required<Options.WebDriver>> = {
      * port of automation driver
      */
     port: {
-        type: 'number',
-        default: 4444
+        type: 'number'
     },
     /**
      * path to WebDriver endpoints
@@ -96,12 +95,6 @@ export const DEFAULTS: Options.Definition<Required<Options.WebDriver>> = {
     /**
      * Override default agent
      */
-    agent: {
-        type: 'object'
-    },
-    /**
-     * Override default agent
-     */
     logLevels: {
         type: 'object'
     },
@@ -116,29 +109,22 @@ export const DEFAULTS: Options.Definition<Required<Options.WebDriver>> = {
      */
     transformRequest: {
         type: 'function',
-        default: (requestOptions: HTTPRequestOptions) => requestOptions
+        default: (requestOptions: RequestInit) => requestOptions
     },
     /**
      * Function transforming the response object after it is received
      */
     transformResponse: {
         type: 'function',
-        default: (response: HTTPResponse) => response
+        default: (response: Options.RequestLibResponse) => response
     },
     /**
      * Appium direct connect options server (https://appiumpro.com/editions/86-connecting-directly-to-appium-hosts-in-distributed-environments)
+     * Whether to allow direct connect caps to adjust endpoint details (Appium only)
      */
-    directConnectProtocol: {
-        type: 'string'
-    },
-    directConnectHost: {
-        type: 'string'
-    },
-    directConnectPort: {
-        type: 'number'
-    },
-    directConnectPath: {
-        type: 'string'
+    enableDirectConnect: {
+        type: 'boolean',
+        default: true
     },
     /**
      * Whether it requires SSL certificates to be valid in HTTP/s requests
@@ -147,11 +133,28 @@ export const DEFAULTS: Options.Definition<Required<Options.WebDriver>> = {
     strictSSL: {
         type: 'boolean',
         default: true
+    },
+    /**
+     * The path to the root of the cache directory. This directory is used to store all drivers that are downloaded
+     * when attempting to start a session.
+     */
+    cacheDir: {
+        type: 'string',
+        default: environment.value.variables.WEBDRIVER_CACHE_DIR
+    },
+    /**
+     * Mask sensitive data in logs by replacing matching string or all captured groups for the provided regular expressions as string
+     */
+    maskingPatterns: {
+        type: 'string',
+        default : undefined,
     }
 }
 
-export const VALID_CAPS = [
-    'browserName', 'browserVersion', 'platformName', 'acceptInsecureCerts',
-    'pageLoadStrategy', 'proxy', 'setWindowRect', 'timeouts', 'strictFileInteractability',
-    'unhandledPromptBehavior'
-]
+export const ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf'
+export const SHADOW_ELEMENT_KEY = 'shadow-6066-11e4-a52e-4f735466cecf'
+
+export const BASE_64_REGEX = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$/
+export const BASE_64_SAFE_STRING_TO_PROCESS_LENGTH = 200_000
+
+export const APPIUM_MASKING_HEADER = { 'x-appium-is-sensitive': 'true' }

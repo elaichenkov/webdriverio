@@ -1,301 +1,452 @@
-import Launcher from '../src/launcher'
+import path from 'node:path'
+import { vi, describe, it, expect, afterEach, beforeEach } from 'vitest'
 import logger from '@wdio/logger'
-import { sleep } from '@wdio/utils'
-import fs from 'fs-extra'
+import { sleep, enableFileLogging } from '@wdio/utils'
+import Launcher from '../src/launcher.js'
 
-const caps: WebDriver.DesiredCapabilities = { maxInstances: 1, browserName: 'chrome' }
+const caps: WebdriverIO.Capabilities = {
+    'wdio:maxInstances': 1,
+    browserName: 'chrome'
+}
 
-jest.mock('fs-extra')
-jest.mock('../src/interface', () => class {
-    emit = jest.fn()
-    on = jest.fn()
-    sigintTrigger = jest.fn()
-    onMessage = jest.fn()
-})
+vi.mock('node:fs/promises', () => ({
+    default: {
+        access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+        mkdir: vi.fn()
+    }
+}))
+vi.mock('@wdio/utils', () => import(path.join(process.cwd(), '__mocks__', '@wdio/utils')))
+vi.mock('@wdio/config', () => import(path.join(process.cwd(), '__mocks__', '@wdio/config')))
+vi.mock('@wdio/config/node', () => import(path.join(process.cwd(), '__mocks__', '@wdio/config/node')))
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+vi.mock('../src/interface', () => ({
+    default: class {
+        totalWorkerCnt: number
+        hasAnsiSupport = true
+        emit = vi.fn()
+        on = vi.fn()
+        sigintTrigger = vi.fn()
+        onMessage = vi.fn()
+        logHookError = vi.fn()
+        finalise = vi.fn()
+
+        constructor (_config: WebdriverIO.Config, totalWorkerCnt: number) {
+            this.totalWorkerCnt = totalWorkerCnt
+        }
+    }
+}))
+
+const shard = { current: 1, total: 1 }
 
 describe('launcher', () => {
-    const emitSpy = jest.spyOn(process, 'emit')
+    const emitSpy = vi.spyOn(process, 'emit')
     let launcher: Launcher
 
     beforeEach(() => {
-        global.console.log = jest.fn()
+        global.console.log = vi.fn()
         emitSpy.mockClear()
         launcher = new Launcher('./')
+        launcher.interface = {
+            onMessage: vi.fn(),
+            finalise: vi.fn(),
+            emit: vi.fn(),
+            sigintTrigger: vi.fn()
+        } as any
     })
 
-    describe('defaults', () => {
-        it('should have default for the argv parameter', () => {
-            expect(launcher['_args']).toEqual({})
-        })
+    it('should have default for the argv parameter', () => {
+        expect(launcher['_args']).toEqual({})
+    })
 
-        it('should run autocompile by default', () => {
-            expect(launcher['configParser'].autoCompile).toBeCalledTimes(1)
+    it('should calculate total worker count after onPrepare added specs', async () => {
+        const localLauncher = new Launcher('./') as any
+        const onPrepare = vi.fn((config: any) => {
+            config.specs.push('./dynamic.test.js')
         })
+        const config: any = {
+            runnerEnv: {},
+            shard: { current: 1, total: 1 },
+            runner: 'local',
+            outputDir: './tempDir',
+            maxInstances: 1,
+            specs: [],
+            onPrepare: [onPrepare],
+            onComplete: [],
+            onWorkerStart: [],
+            onWorkerEnd: []
+        }
 
-        it('should not run auto compile if cli param was provided', () => {
-            const otherLauncher = new Launcher('./', {
-                autoCompileOpts: {
-                    // @ts-expect-error cli params are always strings
-                    autoCompile: 'false'
-                }
-            })
+        localLauncher.configParser.getConfig = vi.fn().mockReturnValue(config)
+        localLauncher.configParser.getCapabilities = vi.fn().mockReturnValue([{ browserName: 'chrome' }])
+        const getSpecs = vi.fn().mockImplementation(() => config.specs)
+        localLauncher.configParser.getSpecs = getSpecs
 
-            expect(otherLauncher['configParser'].autoCompile).toBeCalledTimes(0)
-        })
+        localLauncher._runMode = vi.fn().mockResolvedValue(0)
+        await localLauncher.run()
+
+        expect(onPrepare).toHaveBeenCalledTimes(1)
+        expect(getSpecs).toHaveBeenCalledTimes(1)
+        expect(onPrepare.mock.invocationCallOrder[0]).toBeLessThan(getSpecs.mock.invocationCallOrder[0])
+        expect(localLauncher.interface.totalWorkerCnt).toBe(1)
     })
 
     describe('capabilities', () => {
         it('should NOT fail when capabilities are passed', async () => {
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
-            const exitCode = await launcher.runMode({ specs: ['./'] } as any, [caps])
-            expect(launcher.runSpecs).toBeCalled()
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
+            const exitCode = await launcher['_runMode']({ specs: ['./'] } as any, [caps])
+            expect(launcher['_runSpecs']).toBeCalled()
             expect(exitCode).toEqual(0)
             expect(logger('').error).not.toBeCalled()
         })
 
         it('should fail if no specs were found', async () => {
-            launcher.runSpecs = jest.fn()
-            launcher.configParser.getSpecs = jest.fn().mockReturnValue([])
-            const exitCode = await launcher.runMode({ specs: ['./'] } as any, [caps])
-            expect(launcher.runSpecs).toBeCalledTimes(0)
+            launcher['_runSpecs'] = vi.fn()
+            launcher.configParser.getSpecs = vi.fn().mockReturnValue([])
+            const exitCode = await launcher['_runMode']({ specs: ['./'], shard } as any, [caps])
+            expect(launcher['_runSpecs']).toBeCalledTimes(0)
             expect(exitCode).toBe(1)
         })
 
         it('should fail when no capabilities are passed', async () => {
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
             // @ts-ignore test invalid parameter
-            const exitCode = await launcher.runMode({ specs: ['./'] as any })
+            const exitCode = await launcher['_runMode']({ specs: ['./'] as any, shard })
             expect(exitCode).toEqual(1)
             expect(logger('').error).toBeCalledWith('Missing capabilities, exiting with failure')
         })
 
         it('should fail when no capabilities are set', async () => {
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
-            const exitCode = await launcher.runMode({ specs: ['./'] } as any, undefined)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
+            const exitCode = await launcher['_runMode']({ specs: ['./'], shard } as any)
+            expect(exitCode).toEqual(1)
+            expect(logger('').error).toBeCalledWith('Missing capabilities, exiting with failure')
+        })
+
+        it('should fail when no capabilities are set (empty capabilities array)', async () => {
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
+            const exitCode = await launcher['_runMode']({ specs: ['./'], shard } as any, [])
+            expect(exitCode).toEqual(1)
+            expect(logger('').error).toBeCalledWith('Missing capabilities, exiting with failure')
+        })
+
+        it('should fail when no capabilities are set (empty capabilities array)', async () => {
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
+            const exitCode = await launcher['_runMode']({ specs: ['./'], shard } as any, {})
             expect(exitCode).toEqual(1)
             expect(logger('').error).toBeCalledWith('Missing capabilities, exiting with failure')
         })
 
         it('should start instance in multiremote', () => {
-            launcher.runSpecs = jest.fn()
+            launcher['_runSpecs'] = vi.fn()
             launcher.isMultiremote = true
-            launcher.runMode(
+            launcher['_runMode'](
                 { specs: ['./'], specFileRetries: 2 } as any,
                 { foo: { capabilities: { browserName: 'chrome' } } }
             )
 
             expect(launcher['_schedule']).toHaveLength(1)
-            expect(launcher['_schedule'][0].specs[0].retries).toBe(2)
+            expect(launcher['_schedule'][0].specs[0].retries).toBe(-1)
 
             expect(typeof launcher['_resolve']).toBe('function')
-            expect(launcher.runSpecs).toBeCalledTimes(1)
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
+        })
+
+        it('should start instances with parallel multiremote', () => {
+            launcher['_runSpecs'] = vi.fn()
+            launcher.isMultiremote = true
+            launcher.isParallelMultiremote = true
+            launcher['_runMode'](
+                { specs: ['./'], specFileRetries: 2 } as any,
+                [
+                    { foo: { capabilities: { browserName: 'chrome' } } },
+                    { foo: { capabilities: { browserName: 'chrome' } } }
+                ]
+            )
+
+            expect(launcher['_schedule']).toHaveLength(2)
+            expect(launcher['_schedule'][0].specs[0].retries).toBe(-1)
+            expect(launcher['_schedule'][1].specs[0].retries).toBe(-1)
+
+            expect(typeof launcher['_resolve']).toBe('function')
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
         })
 
         it('should start instance with grouped specs', () => {
-            launcher.runSpecs = jest.fn()
+            launcher['_runSpecs'] = vi.fn()
             launcher.isMultiremote = false
-            launcher.runMode(
+            launcher['_runMode'](
                 { specs: [['/a.js', '/b.js']], specFileRetries: 2 } as any,
                 [caps]
             )
 
             expect(launcher['_schedule']).toHaveLength(1)
-            expect(launcher['_schedule'][0].specs[0].retries).toBe(2)
+            expect(launcher['_schedule'][0].specs[0].retries).toBe(-1)
 
             expect(typeof launcher['_resolve']).toBe('function')
-            expect(launcher.runSpecs).toBeCalledTimes(1)
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
         })
 
         it('should start instance in multiremote with grouped specs', () => {
-            launcher.runSpecs = jest.fn()
+            launcher['_runSpecs'] = vi.fn()
             launcher.isMultiremote = true
-            launcher.runMode(
+            launcher['_runMode'](
                 { specs: [['/a.js', '/b.js']], specFileRetries: 2 } as any,
                 { foo: { capabilities: { browserName: 'chrome' } } }
             )
 
             expect(launcher['_schedule']).toHaveLength(1)
-            expect(launcher['_schedule'][0].specs[0].retries).toBe(2)
+            expect(launcher['_schedule'][0].specs[0].retries).toBe(-1)
 
             expect(typeof launcher['_resolve']).toBe('function')
-            expect(launcher.runSpecs).toBeCalledTimes(1)
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
         })
 
         it('should ignore specFileRetries in watch mode', () => {
-            launcher.runSpecs = jest.fn()
+            launcher['_runSpecs'] = vi.fn()
             launcher['_isWatchMode'] = true
-            launcher.runMode({ specs: ['./'], specFileRetries: 2 } as any, [caps, caps])
+            launcher['_runMode']({ specs: ['./'], specFileRetries: 2 } as any, [caps, caps])
 
             expect(launcher['_schedule']).toHaveLength(2)
             expect(launcher['_schedule'][0].specs[0].retries).toBe(0)
             expect(launcher['_schedule'][1].specs[0].retries).toBe(0)
 
-            expect(launcher.runSpecs).toBeCalledTimes(1)
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
         })
 
         it('should apply maxInstancesPerCapability if maxInstances is not passed', () => {
-            launcher.runSpecs = jest.fn()
-            launcher.runMode(
+            launcher['_runSpecs'] = vi.fn()
+            launcher['_runMode'](
                 { specs: ['./'], specFileRetries: 3, maxInstancesPerCapability: 4 } as any,
                 [{ browserName: 'chrome' }]
             )
 
             expect(launcher['_schedule']).toHaveLength(1)
-            expect(launcher['_schedule'][0].specs[0].retries).toBe(3)
+            expect(launcher['_schedule'][0].specs[0].retries).toBe(-1)
             expect(launcher['_schedule'][0].availableInstances).toBe(4)
 
-            expect(launcher.runSpecs).toBeCalledTimes(1)
+            expect(launcher['_runSpecs']).toBeCalledTimes(1)
+        })
+
+        it('should mixin wdio:maxInstances per capability + precedence over maxInstancesPerCapability', () => {
+            const wdioPrefixMaxInstances = [
+                {
+                    browserName: 'chrome',
+                    'wdio:maxInstances': 11
+                },
+                {
+                    browserName: 'safari',
+                    'wdio:maxInstances': 22
+                }
+            ]
+            launcher['_runSpecs'] = vi.fn()
+            launcher['_runMode'](
+                { specs: ['./'], maxInstancesPerCapability: 3 } as any,
+                wdioPrefixMaxInstances
+            )
+
+            expect(launcher['_schedule']).toHaveLength(2)
+            expect(launcher['_schedule'][0].availableInstances).toBe(11)
+            expect(launcher['_schedule'][1].availableInstances).toBe(22)
+        })
+
+        it('should apply default maxInstancesPerCapability for dynamically added capabilities without wdio:maxInstances', () => {
+            launcher['_runSpecs'] = vi.fn()
+            launcher['_runMode'](
+                { specs: ['./'], specFileRetries: 2 } as any,
+                [
+                    { browserName: 'chrome', platformName: 'Android' },
+                    { browserName: 'chrome', platformName: 'iOS' }
+                ]
+            )
+
+            expect(launcher['_schedule']).toHaveLength(2)
+            expect(launcher['_schedule'][0].availableInstances).toBe(100)
+            expect(launcher['_schedule'][1].availableInstances).toBe(100)
+        })
+
+        it('should apply config maxInstancesPerCapability for dynamically added capabilities', () => {
+            launcher['_runSpecs'] = vi.fn()
+            launcher['_runMode'](
+                { specs: ['./'], maxInstancesPerCapability: 2 } as any,
+                [
+                    { browserName: 'chrome', platformName: 'Android' },
+                    { browserName: 'chrome', platformName: 'iOS' }
+                ]
+            )
+
+            expect(launcher['_schedule']).toHaveLength(2)
+            expect(launcher['_schedule'][0].availableInstances).toBe(2)
+            expect(launcher['_schedule'][1].availableInstances).toBe(2)
         })
     })
 
     describe('hasTriggeredExitRoutine', () => {
         it('should return false if there are specs left of running when hasTriggeredExitRoutine is false', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
             launcher['_hasTriggeredExitRoutine'] = false
-            const returnValue = launcher.runSpecs()
+            const returnValue = launcher['_runSpecs']()
             expect(returnValue).toEqual(false)
         })
 
         it('should return true when hasTriggeredExitRoutine is true', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
             launcher['_hasTriggeredExitRoutine'] = true
-            const returnValue = launcher.runSpecs()
+            const returnValue = launcher['_runSpecs']()
             expect(returnValue).toEqual(true)
         })
     })
 
     describe('endHandler', () => {
-        it('should emit and resolve failed status', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
-            launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
-            launcher['_resolve'] = jest.fn()
-            launcher.endHandler({ cid: '0-1', exitCode: 1 } as any)
-            expect(launcher.interface.emit).toBeCalledWith('job:end', { cid: '0-1', passed: false })
-            expect(launcher['_resolve']).toBeCalledWith(1)
+        const config = { onWorkerEnd: vi.fn() }
+
+        beforeEach(() => {
+            launcher['_launcher'] = []
+            launcher.configParser.getConfig = vi.fn().mockReturnValue(config)
         })
 
-        it('should emit and resolve passed status', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
+        it('should emit and resolve failed status', async () => {
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
             launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
-            launcher['_resolve'] = jest.fn()
-            launcher.endHandler({ cid: '0-1', exitCode: 0 } as any)
-            expect(launcher.interface.emit).toBeCalledWith('job:end', { cid: '0-1', passed: true })
+            launcher['_resolve'] = vi.fn()
+            await launcher['_endHandler']({ cid: '0-1', exitCode: 1, specs: [], retries: 0 } as any)
+            expect(launcher.interface!.emit).toBeCalledWith('job:end', { cid: '0-1', passed: false, retries: 0 })
+            expect(launcher['_resolve']).toBeCalledWith(1)
+            expect(config.onWorkerEnd).toBeCalledWith('0-1', 1, [], 0)
+        })
+
+        it('should emit and resolve passed status', async () => {
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
+            launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
+            launcher['_resolve'] = vi.fn()
+            await launcher['_endHandler']({ cid: '0-1', exitCode: 0 } as any)
+            expect(launcher.interface!.emit).toBeCalledWith('job:end', { cid: '0-1', passed: true })
             expect(launcher['_resolve']).toBeCalledWith(0)
         })
 
-        it('should do nothing if not all specs are run', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
-            launcher.runSpecs = jest.fn().mockReturnValue(0)
+        it('should do nothing if not all specs are run', async () => {
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(0)
             launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
-            launcher['_resolve'] = jest.fn()
-            launcher.endHandler({ cid: '0-1', exitCode: 0 } as any)
-            expect(launcher.interface.emit).toBeCalledWith('job:end', { cid: '0-1', passed: true })
+            launcher['_resolve'] = vi.fn()
+            await launcher['_endHandler']({ cid: '0-1', exitCode: 0 } as any)
+            expect(launcher.interface!.emit).toBeCalledWith('job:end', { cid: '0-1', passed: true })
+            expect(launcher.interface?.finalise).toBeCalledTimes(0)
             expect(launcher['_resolve']).toBeCalledTimes(0)
         })
 
-        it('should do nothing if watch mode is still running', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
+        it('should do nothing if watch mode is still running', async () => {
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
             launcher['_isWatchMode'] = true
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
             launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
-            launcher['_resolve'] = jest.fn()
-            launcher.endHandler({ cid: '0-1', exitCode: 1 } as any)
-            expect(launcher.interface.emit).toBeCalledWith('job:end', { cid: '0-1', passed: false })
+            launcher['_resolve'] = vi.fn()
+            await launcher['_endHandler']({ cid: '0-1', exitCode: 1 } as any)
+            expect(launcher.interface!.emit).toBeCalledWith('job:end', { cid: '0-1', passed: false })
+            expect(launcher.interface?.finalise).toBeCalledTimes(1)
             expect(launcher['_resolve']).toBeCalledTimes(0)
         })
 
-        it('should resolve and not emit on watch mode stop', () => {
-            launcher.getNumberOfRunningInstances = jest.fn().mockReturnValue(1)
+        it('should resolve and not emit on watch mode stop', async () => {
+            launcher['_getNumberOfRunningInstances'] = vi.fn().mockReturnValue(1)
             launcher['_isWatchMode'] = true
             launcher['_hasTriggeredExitRoutine'] = true
-            launcher.runSpecs = jest.fn().mockReturnValue(1)
+            launcher['_runSpecs'] = vi.fn().mockReturnValue(1)
             launcher['_schedule'] = [{ cid: 1 } as any, { cid: 2 }]
-            launcher['_resolve'] = jest.fn()
-            launcher.endHandler({ cid: '0-1', exitCode: 1 } as any)
-            expect(launcher.interface.emit).not.toBeCalled()
+            launcher['_resolve'] = vi.fn()
+            await launcher['_endHandler']({ cid: '0-1', exitCode: 1 } as any)
+            expect(launcher.interface!.emit).not.toBeCalled()
             expect(launcher['_resolve']).toBeCalledWith(0)
         })
 
-        it('should reschedule when runner failed and retries remain', () => {
+        it('should reschedule when runner failed and retries remain', async () => {
             launcher['_schedule'] = [{ cid: 0, specs: [] }] as any
-            launcher.endHandler({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
+            await launcher['_endHandler']({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
             expect(launcher['_schedule']).toMatchObject([{ cid: 0, specs: [{ rid: '0-5', files: ['a.js'], retries: 0 }] }])
         })
 
-        it('should requeue retried specfiles at beginning of queue', () => {
-            launcher.configParser.getConfig = jest.fn().mockReturnValue({ specFileRetriesDeferred: false })
+        it('should requeue retried specfiles at beginning of queue', async () => {
+            launcher.configParser.getConfig = vi.fn().mockReturnValue({ specFileRetriesDeferred: false, onWorkerEnd: vi.fn() })
             launcher['_schedule'] = [{ cid: 0, specs: [{ files: ['b.js'] }] }] as any
-            launcher.endHandler({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
+            await launcher['_endHandler']({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
             expect(launcher['_schedule']).toMatchObject([{ cid: 0, specs: [{ rid: '0-5', files: ['a.js'], retries: 0 }, { files: ['b.js'] }] }])
         })
 
-        it('should requeue retried specfiles at end of queue', () => {
+        it('should requeue retried specfiles at end of queue', async () => {
             launcher['_schedule'] = [{ cid: 0, specs: [{ files: ['b.js'] }] }] as any
-            launcher.endHandler({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
-            expect(launcher['_schedule']).toMatchObject([{ cid: 0, specs: [{ files: ['b.js'] }, { rid: '0-5', files: ['a.js'], retries: 0 }] }])
+            await launcher['_endHandler']({ cid: '0-5', exitCode: 1, retries: 1, specs: ['a.js'] })
+            expect(launcher['_schedule']).toMatchObject([{
+                cid: 0,
+                specs: [{
+                    files: ['a.js']
+                }, {
+                    files: ['b.js'],
+                }]
+            }])
         })
     })
 
     describe('exitHandler', () => {
         it('should do nothing if no callback is given', () => {
             launcher['_hasTriggeredExitRoutine'] = false
-            launcher.runner = { shutdown: jest.fn()
-                .mockReturnValue(Promise.resolve()) } as any
+            launcher.runner = {
+                shutdown: vi.fn()
+                    .mockReturnValue(Promise.resolve())
+            } as any
 
-            launcher.exitHandler()
+            launcher['_exitHandler']()
 
             expect(launcher['_hasTriggeredExitRoutine']).toBe(false)
-            expect(launcher.interface.sigintTrigger).toBeCalledTimes(0)
-            expect(launcher.runner.shutdown).toBeCalledTimes(0)
+            expect(launcher.interface!.sigintTrigger).toBeCalledTimes(0)
+            expect(launcher.runner?.shutdown).toBeCalledTimes(0)
         })
 
         it('should do nothing if shutdown was called before', () => {
             launcher['_hasTriggeredExitRoutine'] = true
-            launcher.runner = { shutdown: jest.fn().mockReturnValue(Promise.resolve()) } as any
+            launcher.runner = { shutdown: vi.fn().mockReturnValue(Promise.resolve()) } as any
 
-            expect(launcher.exitHandler(() => 'foo')).toBe('foo')
+            expect(launcher['_exitHandler'](() => 'foo')).toBe('foo')
 
             expect(launcher['_hasTriggeredExitRoutine']).toBe(true)
-            expect(launcher.interface.sigintTrigger).toBeCalledTimes(0)
-            expect(launcher.runner.shutdown).toBeCalledTimes(0)
+            expect(launcher.interface!.sigintTrigger).toBeCalledTimes(0)
+            expect(launcher.runner?.shutdown).toBeCalledTimes(0)
         })
 
         it('should shutdown', () => {
             launcher['_hasTriggeredExitRoutine'] = false
-            launcher.runner = { shutdown: jest.fn().mockReturnValue(Promise.resolve()) } as any
+            launcher.runner = { shutdown: vi.fn().mockReturnValue(Promise.resolve()) } as any
 
-            launcher.exitHandler(jest.fn())
+            launcher['_exitHandler'](vi.fn())
 
             expect(launcher['_hasTriggeredExitRoutine']).toBe(true)
-            expect(launcher.interface.sigintTrigger).toBeCalledTimes(1)
-            expect(launcher.runner.shutdown).toBeCalledTimes(1)
+            expect(launcher.interface!.sigintTrigger).toBeCalledTimes(1)
+            expect(launcher.runner?.shutdown).toBeCalledTimes(1)
         })
     })
 
     describe('getRunnerId', () => {
         it('should return increasing cid numbers', () => {
-            expect(launcher.getRunnerId(0)).toBe('0-0')
-            expect(launcher.getRunnerId(0)).toBe('0-1')
-            expect(launcher.getRunnerId(0)).toBe('0-2')
-            expect(launcher.getRunnerId(2)).toBe('2-0')
-            expect(launcher.getRunnerId(0)).toBe('0-3')
-            expect(launcher.getRunnerId(2)).toBe('2-1')
+            expect(launcher['_getRunnerId'](0)).toBe('0-0')
+            expect(launcher['_getRunnerId'](0)).toBe('0-1')
+            expect(launcher['_getRunnerId'](0)).toBe('0-2')
+            expect(launcher['_getRunnerId'](2)).toBe('2-0')
+            expect(launcher['_getRunnerId'](0)).toBe('0-3')
+            expect(launcher['_getRunnerId'](2)).toBe('2-1')
         })
     })
 
     describe('getNumberOfSpecsLeft', () => {
         it('should return number of spec', () => {
             launcher['_schedule'] = [{ specs: [1, 2, [3, 4, 5]] }, { specs: [1, 2] }] as any
-            expect(launcher.getNumberOfSpecsLeft()).toBe(5)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(5)
         })
     })
 
     describe('getNumberOfRunningInstances', () => {
         it('should return number of spec', () => {
             launcher['_schedule'] = [{ runningInstances: 3 }, { runningInstances: 2 }] as any
-            expect(launcher.getNumberOfRunningInstances()).toBe(5)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(5)
         })
     })
 
@@ -313,31 +464,37 @@ describe('launcher', () => {
             ]
             // Mock the return value of getSpecs so we are not doing cross
             // module testing
-            launcher.configParser = { getSpecs: jest.fn().mockReturnValue(
-                ['/a.js', ['/b.js', '/c.js', '/d.js'], '/e.js']
-            ) } as any
-            expect(launcher.formatSpecs(capabilities, specFileRetries)).toStrictEqual(expected)
+            launcher.configParser = {
+                getSpecs: vi.fn().mockReturnValue(
+                    ['/a.js', ['/b.js', '/c.js', '/d.js'], '/e.js']
+                )
+            } as any
+            expect(launcher['_formatSpecs'](capabilities as any, specFileRetries)).toStrictEqual(expected)
         })
     })
 
-    describe('runSpecs', () => {
+    describe('_runSpecs', () => {
         beforeEach(() => {
-            launcher.startInstance = jest.fn()
+            launcher['_startInstance'] = vi.fn()
         })
 
         it('should not start running anything if exit routine is triggered', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100
+                })
+            } as any
             launcher['_hasTriggeredExitRoutine'] = true
-            expect(launcher.runSpecs()).toBe(true)
-            expect(launcher.startInstance).toBeCalledTimes(0)
+            expect(launcher['_runSpecs']()).toBe(true)
+            expect(launcher['_startInstance']).toBeCalledTimes(0)
         })
 
         it('should run all specs', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -360,9 +517,9 @@ describe('launcher', () => {
                 runningInstances: 0,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(false)
-            expect(launcher.getNumberOfRunningInstances()).toBe(9)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(0)
+            expect(launcher['_runSpecs']()).toBe(false)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(9)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(0)
             expect(launcher['_schedule'][0].runningInstances).toBe(3)
             expect(launcher['_schedule'][0].availableInstances).toBe(47)
             expect(launcher['_schedule'][1].runningInstances).toBe(4)
@@ -372,9 +529,11 @@ describe('launcher', () => {
         })
 
         it('should run arrayed specs in a single instance', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -397,9 +556,9 @@ describe('launcher', () => {
                 runningInstances: 0,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(false)
-            expect(launcher.getNumberOfRunningInstances()).toBe(5)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(0)
+            expect(launcher['_runSpecs']()).toBe(false)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(5)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(0)
             expect(launcher['_schedule'][0].runningInstances).toBe(2)
             expect(launcher['_schedule'][0].availableInstances).toBe(48)
             expect(launcher['_schedule'][1].runningInstances).toBe(1)
@@ -410,10 +569,12 @@ describe('launcher', () => {
 
         it('should not run anything if runner failed', () => {
             launcher['_runnerFailed'] = 2
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100,
-                bail: 1
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100,
+                    bail: 1
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -436,15 +597,17 @@ describe('launcher', () => {
                 runningInstances: 0,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(true)
-            expect(launcher.getNumberOfRunningInstances()).toBe(0)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(0)
+            expect(launcher['_runSpecs']()).toBe(true)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(0)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(0)
         })
 
         it('should run as much as maxInstances allows', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 5
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 5
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -467,15 +630,17 @@ describe('launcher', () => {
                 runningInstances: 0,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(false)
-            expect(launcher.getNumberOfRunningInstances()).toBe(5)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(4)
+            expect(launcher['_runSpecs']()).toBe(false)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(5)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(4)
         })
 
         it('should not allow to schedule more runner if no instances are available', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -498,9 +663,9 @@ describe('launcher', () => {
                 runningInstances: 2,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(false)
-            expect(launcher.getNumberOfRunningInstances()).toBe(19)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(6)
+            expect(launcher['_runSpecs']()).toBe(false)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(19)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(6)
             expect(launcher['_schedule'][0].runningInstances).toBe(11)
             expect(launcher['_schedule'][0].availableInstances).toBe(0)
             expect(launcher['_schedule'][1].runningInstances).toBe(6)
@@ -510,9 +675,11 @@ describe('launcher', () => {
         })
 
         it('should not run if all specs were executed', () => {
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                maxInstances: 100
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    maxInstances: 100
+                })
+            } as any
             launcher['_schedule'] = [{
                 cid: 0,
                 caps: { browserName: 'chrome' },
@@ -521,20 +688,25 @@ describe('launcher', () => {
                 runningInstances: 0,
                 seleniumServer: {}
             }] as any
-            expect(launcher.runSpecs()).toBe(true)
-            expect(launcher.getNumberOfRunningInstances()).toBe(0)
-            expect(launcher.getNumberOfSpecsLeft()).toBe(0)
+            expect(launcher['_runSpecs']()).toBe(true)
+            expect(launcher['_getNumberOfRunningInstances']()).toBe(0)
+            expect(launcher['_getNumberOfSpecsLeft']()).toBe(0)
         })
     })
 
     describe('startInstance', () => {
         beforeEach(() => {
-            (launcher.runner.run as jest.Mock) = jest.fn().mockReturnValue({ on: () => {} })
+            // launcher.runner?.run = vi.fn().mockReturnValue({ on: () => {} })
             launcher['_launcher'] = []
+            launcher.runner = {
+                run: vi.fn().mockReturnValue({
+                    on: vi.fn()
+                })
+            } as any
         })
 
         it('should start an instance', async () => {
-            const onWorkerStartMock = jest.fn()
+            const onWorkerStartMock = vi.fn()
             const caps = {
                 browserName: 'chrome'
             }
@@ -542,7 +714,7 @@ describe('launcher', () => {
             launcher['_args'].hostname = '127.0.0.2'
 
             expect(launcher['_runnerStarted']).toBe(0)
-            await launcher.startInstance(
+            await launcher['_startInstance'](
                 ['/foo.test.js'],
                 caps,
                 0,
@@ -552,8 +724,9 @@ describe('launcher', () => {
 
             expect(sleep).not.toHaveBeenCalled()
             expect(launcher['_runnerStarted']).toBe(1)
-            expect((launcher.runner.run as jest.Mock).mock.calls[0][0]).toHaveProperty('cid', '0-5')
-            expect(launcher.getRunnerId(0)).toBe('0-0')
+            // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
+            expect(vi.mocked(launcher.runner?.run!).mock.calls[0][0]).toHaveProperty('cid', '0-5')
+            expect(launcher['_getRunnerId'](0)).toBe('0-0')
 
             expect(onWorkerStartMock).toHaveBeenCalledWith(
                 '0-5',
@@ -564,19 +737,61 @@ describe('launcher', () => {
             )
         })
 
-        it('should wait before starting an instance on retry', async () => {
-            const onWorkerStartMock = jest.fn()
+        it('should start an instance with different capability worker by worker', async () => {
+            const hostname = '127.0.0.2'
             const caps = {
                 browserName: 'chrome'
             }
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                onWorkerStart: onWorkerStartMock,
-                specFileRetries: 2,
-                specFileRetriesDelay: 0.01
-            }) } as any
+            const expectedCaps = Object.assign({}, caps, {
+                'goog:chromeOptions': {
+                    args: `--inspect=${hostname}:50000`,
+                }
+            })
+            const onWorkerStartMock = vi.fn().mockImplementation((_runnerId, caps) => {
+                caps['goog:chromeOptions'] = {
+                    args: `--inspect=${hostname}:50000`
+                }
+            })
+            launcher.configParser.getConfig = () => ({ onWorkerStart: onWorkerStartMock }) as any
+            launcher['_args'].hostname = hostname
+
+            expect(launcher['_runnerStarted']).toBe(0)
+            await launcher['_startInstance'](
+                ['/foo.test.js'],
+                caps,
+                0,
+                '0-5',
+                0
+            )
+
+            expect(onWorkerStartMock).toHaveBeenCalledWith(
+                '0-5',
+                expectedCaps,
+                ['/foo.test.js'],
+                { hostname: '127.0.0.2' },
+                []
+            )
+
+            expect(caps).toStrictEqual({
+                browserName: 'chrome'
+            })
+        })
+
+        it('should wait before starting an instance on retry', async () => {
+            const onWorkerStartMock = vi.fn()
+            const caps = {
+                browserName: 'chrome'
+            }
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    onWorkerStart: onWorkerStartMock,
+                    specFileRetries: 2,
+                    specFileRetriesDelay: 0.01
+                })
+            } as any
             launcher['_args'].hostname = '127.0.0.3'
 
-            await launcher.startInstance(
+            await launcher['_startInstance'](
                 ['/foo.test.js'],
                 caps,
                 0,
@@ -597,18 +812,20 @@ describe('launcher', () => {
         })
 
         it('should not wait before starting an instance on the first run', async () => {
-            const onWorkerStartMock = jest.fn()
+            const onWorkerStartMock = vi.fn()
             const caps = {
                 browserName: 'chrome'
             }
-            launcher.configParser = { getConfig: jest.fn().mockReturnValue({
-                onWorkerStart: onWorkerStartMock,
-                specFileRetries: 4,
-                specFileRetriesDelay: 0.01
-            }) } as any
+            launcher.configParser = {
+                getConfig: vi.fn().mockReturnValue({
+                    onWorkerStart: onWorkerStartMock,
+                    specFileRetries: 4,
+                    specFileRetriesDelay: 0.01
+                })
+            } as any
             launcher['_args'].hostname = '127.0.0.4'
 
-            await launcher.startInstance(
+            await launcher['_startInstance'](
                 ['/foo.test.js'],
                 caps,
                 0,
@@ -628,59 +845,52 @@ describe('launcher', () => {
         })
     })
 
-    describe('config options', () => {
-        let ensureDirSyncSpy
-        beforeEach(() => {
-            ensureDirSyncSpy = jest.spyOn(fs, 'ensureDirSync')
-        })
-        it('should create directory when the config options have a outputDir option', () => {
-            expect(ensureDirSyncSpy).toHaveBeenCalled()
-            expect(ensureDirSyncSpy).toHaveBeenCalledWith('tempDir')
-        })
-        afterEach(() => {
-            ensureDirSyncSpy.mockClear()
-        })
-    })
-
     describe('run', () => {
-        let config: WebdriverIO.Config = { capabilities: {} }
+        let config: WebdriverIO.Config = { capabilities: [{}] }
 
         beforeEach(() => {
-            global.console.error = jest.fn()
+            global.console.error = vi.fn()
 
             config = {
                 // ConfigParser.addFileConfig() will return onPrepare and onComplete as arrays of functions
-                onPrepare: [jest.fn()],
-                onComplete: [jest.fn()],
-                capabilities: {}
+                onPrepare: [vi.fn()],
+                onComplete: [vi.fn()],
+                capabilities: [{}],
+                runner: 'local',
+                runnerEnv: {},
+                outputDir: 'tempDir',
+                shard
             }
             launcher.configParser = {
-                getCapabilities: jest.fn().mockReturnValue(0),
-                getConfig: jest.fn().mockReturnValue(config),
-                autoCompile: jest.fn()
+                getCapabilities: vi.fn().mockReturnValue({}),
+                getConfig: vi.fn().mockReturnValue(config),
+                initialize: vi.fn()
             } as any
-            launcher.runner = { initialise: jest.fn(), shutdown: jest.fn() } as any
-            launcher.runMode = jest.fn().mockImplementation((config, caps) => caps)
-            launcher.interface = { finalise: jest.fn() } as any
+            launcher.runner = { initialize: vi.fn(), shutdown: vi.fn() } as any
+            launcher['_runMode'] = vi.fn().mockImplementation(() => 0)
         })
 
         it('exit code 0', async () => {
             expect(await launcher.run()).toEqual(0)
-            expect(launcher.runner.shutdown).toBeCalled()
+            expect(launcher['configParser'].initialize).toBeCalledTimes(1)
+            expect(launcher.runner!.shutdown).toBeCalled()
+            expect(enableFileLogging).toHaveBeenCalledWith('tempDir')
 
-            expect(launcher.configParser.getCapabilities).toBeCalledTimes(1)
+            expect(launcher.configParser.getCapabilities).toBeCalledTimes(2)
             expect(launcher.configParser.getConfig).toBeCalledTimes(1)
-            expect(launcher.runner.initialise).toBeCalledTimes(1)
-            expect(config.onPrepare[0]).toBeCalledTimes(1)
-            expect(launcher.runMode).toBeCalledTimes(1)
-            expect(config.onPrepare[0]).toBeCalledTimes(1)
-            expect(launcher.interface.finalise).toBeCalledTimes(1)
+            expect(launcher.runner!.initialize).toBeCalledTimes(1)
+            // @ts-ignore
+            expect(config.onPrepare![0]).toBeCalledTimes(1)
+            expect(launcher['_runMode']).toBeCalledTimes(1)
+            // @ts-ignore
+            expect(config.onPrepare![0]).toBeCalledTimes(1)
+            expect(launcher.interface!.finalise).toBeCalledTimes(1)
         })
 
         it('should not shutdown runner if was called before', async () => {
             launcher['_hasTriggeredExitRoutine'] = true
             expect(await launcher.run()).toEqual(0)
-            expect(launcher.runner.shutdown).not.toBeCalled()
+            expect(launcher.runner!.shutdown).not.toBeCalled()
         })
 
         it('onComplete error', async () => {
@@ -688,29 +898,29 @@ describe('launcher', () => {
             config.onComplete = [() => { throw new Error() }]
 
             expect(await launcher.run()).toEqual(1)
-            expect(launcher.runner.shutdown).toBeCalled()
+            expect(launcher.runner!.shutdown).toBeCalled()
         })
 
         it('should shutdown runner on error', async () => {
-            delete logger.waitForBuffer
+            logger.waitForBuffer = () => Promise.reject(new Error('ups'))
 
             let error
             try {
                 await launcher.run()
-            } catch (err) {
+            } catch (err: any) {
                 error = err
             }
-            expect(launcher.runner.shutdown).toBeCalled()
+            expect(launcher.runner!.shutdown).toBeCalled()
             expect(error).toBeInstanceOf(Error)
         })
 
         afterEach(() => {
-            (global.console.error as jest.Mock).mockRestore()
+            vi.mocked(global.console.error).mockRestore()
         })
     })
 
     afterEach(() => {
-        (global.console.log as jest.Mock).mockRestore()
-        ;(sleep as jest.Mock).mockClear()
+        vi.mocked(global.console.log).mockRestore()
+        vi.mocked(sleep).mockClear()
     })
 })

@@ -1,10 +1,10 @@
 // object with no match
 export interface ProtocolCommandResponse {
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 // webdriver.json
-export interface SessionReturn extends /* DesiredCapabilities, */ ProtocolCommandResponse { }
+export interface SessionReturn extends ProtocolCommandResponse { }
 
 export interface StatusReturn extends ProtocolCommandResponse {
     ready?: boolean,
@@ -12,11 +12,22 @@ export interface StatusReturn extends ProtocolCommandResponse {
 }
 
 export type ElementReferenceId = 'element-6066-11e4-a52e-4f735466cecf'
+export type ShadowElementReferenceId = 'shadow-6066-11e4-a52e-4f735466cecf'
 export type ElementReference = Record<ElementReferenceId, string>
+export type ShadowElementReference = Record<ShadowElementReferenceId, string>
 
 export interface WindowHandle {
     handle: string,
     type: string
+}
+
+export interface Credential {
+    credentialId: string,
+    isResidentCredential: boolean,
+    rpId: string,
+    privateKey: string,
+    userHandle: string,
+    signCount: number
 }
 
 export interface RectReturn {
@@ -26,7 +37,15 @@ export interface RectReturn {
     height: number
 }
 
-// appium.json
+export interface DeleteSessionOpts {
+    /**
+     * if set to `false` the driver process remains alive after calling deleteSession
+     * @default true
+     */
+    shutdownDriver?: boolean
+}
+
+// appium protocol
 export interface StringsReturn {
     [key: string]: string
 }
@@ -56,7 +75,7 @@ export interface Timeouts {
     script?: number
 }
 
-export type SameSiteOptions = 'Lax' | 'Strict'
+export type SameSiteOptions = 'lax' | 'strict' | 'none'
 export interface Cookie {
     /**
      * The name of the cookie.
@@ -98,8 +117,8 @@ export interface Cookie {
 }
 
 export type CommandPath = 'string'
-export type CommandMethod = 'POST' | 'GET' | 'DELETE'
-export type Protocol = Record<CommandPath, Record<CommandMethod, CommandEndpoint>>
+export type CommandMethod = 'POST' | 'GET' | 'DELETE' | 'socket'
+export type Protocol = Record<string, Partial<Record<CommandMethod, CommandEndpoint>>>
 
 /**
  * describes a command endpoint
@@ -112,11 +131,15 @@ export interface CommandEndpoint {
     /**
      * command description
      */
-    description: string
+    description?: string
     /**
      * link to specification reference
      */
     ref: string
+    /**
+     * description for the deprecated command
+     */
+    deprecated?: string
     /**
      * supported command parameters
      */
@@ -132,17 +155,18 @@ export interface CommandEndpoint {
     /**
      * set to true if command is only supported in Selenium Hub Node
      */
-    isHubCommand?: boolean,
+    isHubCommand?: boolean
     /**
      * information on return data
      */
     returns?: CommandReturnObject
+    examples?: string[][]
 }
 
 export interface CommandReturnObject {
     type: string
     name: string
-    description: string
+    description?: string
 }
 
 export interface CommandPathVariables {
@@ -161,7 +185,7 @@ export interface CommandParameters {
     name: string,
     type: string,
     description: string,
-    required: boolean
+    required?: boolean
 }
 
 export type Platform = 'ios' | 'android'
@@ -175,4 +199,127 @@ export type Environments = 'XCUITest' | 'UIAutomation' | 'UiAutomator'
  * }
  * ```
  */
-export type SupportedEnvironments = Record<Platform, Record<Environments, string>>
+export type SupportedEnvironments = Partial<Record<Platform, Partial<Record<Environments, string>>>>
+
+// Session Methods
+export type SessionMethods =
+    | 'session.status'
+    | 'session.new'
+    | 'session.end'
+    | 'session.subscribe'
+    | 'session.unsubscribe'
+
+// Browser Methods
+export type BrowserMethods =
+    | 'browser.close'
+    | 'browser.createUserContext'
+    | 'browser.getClientWindows'
+    | 'browser.getUserContexts'
+    | 'browser.removeUserContext'
+    | 'browser.setClientWindowState'
+
+// BrowsingContext Methods
+export type BrowsingContextMethods =
+    | 'browsingContext.activate'
+    | 'browsingContext.captureScreenshot'
+    | 'browsingContext.close'
+    | 'browsingContext.create'
+    | 'browsingContext.getTree'
+    | 'browsingContext.handleUserPrompt'
+    | 'browsingContext.locateNodes'
+    | 'browsingContext.navigate'
+    | 'browsingContext.print'
+    | 'browsingContext.reload'
+    | 'browsingContext.setViewport'
+    | 'browsingContext.traverseHistory'
+    | 'browsingContext.contextCreated'
+    | 'browsingContext.contextDestroyed'
+    | 'browsingContext.navigationStarted'
+    | 'browsingContext.fragmentNavigated'
+    | 'browsingContext.historyUpdated'
+    | 'browsingContext.domContentLoaded'
+    | 'browsingContext.load'
+    | 'browsingContext.downloadWillBegin'
+    | 'browsingContext.navigationAborted'
+    | 'browsingContext.navigationFailed'
+    | 'browsingContext.userPromptClosed'
+    | 'browsingContext.userPromptOpened'
+
+// Network Methods
+export type NetworkMethods =
+    | 'network.addIntercept'
+    | 'network.continueRequest'
+    | 'network.continueResponse'
+    | 'network.continueWithAuth'
+    | 'network.failRequest'
+    | 'network.provideResponse'
+    | 'network.removeIntercept'
+    | 'network.setCacheBehavior'
+    | 'network.authRequired'
+    | 'network.beforeRequestSent'
+    | 'network.fetchError'
+    | 'network.responseCompleted'
+    | 'network.responseStarted'
+
+// Script Methods
+export type ScriptMethods =
+    | 'script.addPreloadScript'
+    | 'script.disown'
+    | 'script.callFunction'
+    | 'script.evaluate'
+    | 'script.getRealms'
+    | 'script.removePreloadScript'
+    | 'script.realmCreated'
+    | 'script.realmDestroyed'
+
+// Storage Methods
+export type StorageMethods =
+    | 'storage.getCookies'
+    | 'storage.setCookie'
+    | 'storage.deleteCookies'
+
+// Log Methods
+export type LogMethods =
+    | 'log.entryAdded'
+
+// Input Methods
+export type InputMethods =
+    | 'input.performActions'
+    | 'input.releaseActions'
+    | 'input.setFiles'
+
+/**
+ * Combined Type for Supported Methods
+ */
+export type SupportedMethods =
+    | SessionMethods
+    | BrowserMethods
+    | BrowsingContextMethods
+    | NetworkMethods
+    | ScriptMethods
+    | StorageMethods
+    | LogMethods
+    | InputMethods
+
+export interface BidiRequest {
+    method: SupportedMethods
+    /**
+     * types will be more defined later
+     */
+    params: Record<string, unknown>
+}
+
+export type Context = string | DetailedContext
+
+/**
+ * Extended Context when running tests in Appium
+ */
+export interface DetailedContext {
+    id: string
+    title?: string
+    url?: string
+    bundleId?: string
+    // This is based on the new WebdriverIO getContexts command
+    packageName?: string
+    webviewPageId?: string
+}

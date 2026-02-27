@@ -1,54 +1,11 @@
-import { Options, Reporters } from '@wdio/types'
-import { BACKEND_CHOICES, REGION_OPTION, COMPILER_OPTION_ANSWERS } from './constants'
+import type { Options, Reporters } from '@wdio/types'
+import type { NormalizedPackageJson } from 'read-pkg-up'
+import type { SUPPORTED_PACKAGE_MANAGERS } from 'create-wdio/utils'
 
-type ValueOf<T> = T[keyof T]
-
-export interface Questionnair {
-    runner: 'local'
-    backend: ValueOf<typeof BACKEND_CHOICES>
-    hostname: string
-    port: string
-    path: string
-    expEnvAccessKey: string
-    expEnvHostname: string
-    expEnvPort: string
-    expEnvProtocol: 'http' | 'https'
-    // eslint-disable-next-line
-    env_user: string
-    // eslint-disable-next-line
-    env_key: string
-    headless: boolean
-    region: ValueOf<typeof REGION_OPTION>
-    framework: string
-    specs: string
-    stepDefinitions: string
-    generateTestFiles: boolean
-    usePageObjects: boolean
-    pages: string
-    isUsingCompiler: ValueOf<typeof COMPILER_OPTION_ANSWERS>
-    reporters: string[]
-    services: string[]
-    outputDir: string
-    baseUrl: string
-}
-
-export interface ParsedAnswers extends Omit<Questionnair, 'runner' | 'framework' | 'reporters' | 'services'> {
-    runner: 'local'
-    framework: string
-    reporters: string[]
-    services: string[]
-    packagesToInstall: string[]
-    isUsingTypeScript: boolean
-    isUsingBabel: boolean
-    isSync: boolean
-    _async: string
-    _await: string
-    destSpecRootPath: string
-    destPageObjectRootPath: string
-    relativePath: string
-}
+export type PM = typeof SUPPORTED_PACKAGE_MANAGERS[number]
 
 export interface RunCommandArguments {
+    coverage?: boolean
     watch?: boolean
     hostname?: string
     port?: number
@@ -58,6 +15,7 @@ export interface RunCommandArguments {
     logLevel?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
     bail?: number
     baseUrl?: string
+    shard?: Options.ShardOptions
     waitforTimeout?: number
     framework?: string
     reporters?: Reporters.ReporterEntry[]
@@ -67,8 +25,9 @@ export interface RunCommandArguments {
     mochaOpts?: WebdriverIO.MochaOpts
     jasmineOpts?: WebdriverIO.JasmineOpts
     cucumberOpts?: WebdriverIO.CucumberOpts
-    autoCompileOpts?: Options.AutoCompileConfig
     configPath: string
+    updateSnapshots?: Options.Testrunner['updateSnapshots']
+    tsConfigPath?: string
 
     /**
      * @internal
@@ -81,23 +40,19 @@ export interface ReplCommandArguments {
     deviceName: string
     udid: string
     option: string
+    capabilities: string
 }
 
 export interface InstallCommandArguments {
-    yarn: boolean
-    config: string
-    type: 'service' | 'reporter' | 'framework'
+    config?: string
+    type: 'service' | 'reporter' | 'framework' | 'plugin'
     name: string
-}
-
-export interface ConfigCommandArguments {
-    yarn: boolean
-    yes: boolean
 }
 
 export interface SupportedPackage {
     package: string
     short: string
+    purpose: string
 }
 
 export interface OnCompleteResult {
@@ -110,13 +65,20 @@ export interface OnCompleteResult {
 /** Extracted from @types/lodash@4.14.168 */
 export type ValueKeyIteratee<T> =
     | ((value: T, key: string) => NotVoid)
-    | IterateeShorthand<T>;
+    | IterateeShorthand<T>
 type IterateeShorthand<T> =
     | PropertyName
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | [PropertyName, any]
-    | PartialShallow<T>;
-type PropertyName = string | number | symbol;
+    | PartialShallow<T>
+type PropertyName = string | number | symbol
 type PartialShallow<T> = {
     [P in keyof T]?: T[P] extends object ? object : T[P];
-};
-type NotVoid = unknown;
+}
+type NotVoid = unknown
+
+export interface ProjectProps {
+    esmSupported: boolean
+    path: string
+    packageJson: NormalizedPackageJson
+}

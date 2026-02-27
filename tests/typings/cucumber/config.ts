@@ -1,17 +1,24 @@
+import { expectType } from 'tsd'
+
 const config: WebdriverIO.Config = {
     cucumberOpts: {
         timeout: 123,
         require: ['123'],
         // @ts-expect-error
-        scenarioLevelReporter: 'wrong param'
+        scenarioLevelReporter: 'wrong param',
     },
-    capabilities: {}
+    capabilities: [{}]
 }
 
 const configB: WebdriverIO.Config = {
-    capabilities: {},
+    capabilities: [{}],
     beforeFeature (uri, feature) {
-        uri.lastIndexOf('foo')
-        feature.children[0].scenario.name.lastIndexOf('bar')
+        expectType<string>(uri)
+        expectType<string>(feature.children[0].scenario.name)
     }
 }
+
+/**
+ * check import of assertion lib
+ */
+expect($('foo')).toHaveText('foobar')

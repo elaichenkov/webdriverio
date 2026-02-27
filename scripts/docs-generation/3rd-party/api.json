@@ -4,8 +4,13 @@
         "title": "Expect",
         "githubUrl": "https://github.com/webdriverio/expect-webdriverio",
         "npmUrl": "https://www.npmjs.com/package/expect-webdriverio",
-        "location": "/docs/API.md",
+        "locations": [
+          "docs/API.md",
+          "docs/Types.md",
+          "docs/Framework.md",
+          "docs/CustomMatchers.md",
+          "docs/Examples.md"
+        ],
         "suppressBuildInfo": true
     }
 ]
-

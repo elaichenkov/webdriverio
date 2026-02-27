@@ -4,6 +4,10 @@ beforeSuite called
 beforeTest called
 beforeCommand called
 afterCommand called
+beforeAssertion called
+beforeCommand called
+afterCommand called
+afterAssertion called
 afterTest called
 afterSuite called
 after called
@@ -14,6 +18,7 @@ afterSession called
 
 export const LAUNCHER_LOGS = `onPrepare called
 onWorkerStart called
+onWorkerEnd called
 onComplete called
 `
 
@@ -26,6 +31,10 @@ onHookStart
 onHookEnd
 onBeforeCommand
 onAfterCommand
+onBeforeAssertion
+onBeforeCommand
+onAfterCommand
+onAfterAssertion
 onTestPass
 onTestEnd
 onHookStart
@@ -50,6 +59,10 @@ onHookEnd
 onTestStart
 onBeforeCommand
 onAfterCommand
+onBeforeAssertion
+onBeforeCommand
+onAfterCommand
+onAfterAssertion
 onTestPass
 onTestEnd
 onTestStart
@@ -80,6 +93,10 @@ onHookEnd
 onHookStart
 onHookEnd
 onTestStart
+onBeforeAssertion
+onBeforeCommand
+onAfterCommand
+onAfterAssertion
 onTestPass
 onHookStart
 onHookEnd

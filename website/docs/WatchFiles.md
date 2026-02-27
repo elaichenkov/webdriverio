@@ -5,7 +5,7 @@ title: Watch Test Files
 
 With the WDIO testrunner you can watch files while you are working on them. They automatically rerun if you change either something in your app or in your test files. By adding a `--watch` flag when calling the `wdio` command the testrunner will wait for file changes after it ran all tests, e.g.
 
-```bash
+```sh
 wdio wdio.conf.js --watch
 ```
 
@@ -13,7 +13,7 @@ By default it only watches for changes in your `specs` files. However by setting
 
 ```js
 // wdio.conf.js
-export.config = {
+export const config = {
     // ...
     filesToWatch: [
         // watch for all JS files in my app

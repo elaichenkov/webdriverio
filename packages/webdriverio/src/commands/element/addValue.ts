@@ -1,60 +1,57 @@
-import { transformToCharString } from '../../utils'
-import logger from '@wdio/logger'
+import type { InputOptions } from '../../types.js'
+import { CommandRuntimeOptions } from 'webdriver'
 
-const log = logger('addValue')
-
-export type CommandOptions = {
-    translateToUnicode?: boolean
-}
-
-export type Value = string | number
-
-const isNumberOrString = (input: unknown) => typeof input === 'string' || typeof input === 'number'
-
-const isValidType = (value: unknown) => (
-    isNumberOrString(value) ||
-    Array.isArray(value) && value.every((item) => isNumberOrString(item))
-)
+const VALID_TYPES = ['string', 'number']
 
 /**
  *
- * Add a value to an object found by given selector. You can also use unicode
- * characters like Left arrow or Back space. WebdriverIO will take care of
- * translating them into unicode characters. You’ll find all supported characters
- * [here](https://w3c.github.io/webdriver/webdriver-spec.html#keyboard-actions).
- * To do that, the value has to correspond to a key from the table. It can be disabled
- * by setting `translateToUnicode` optional parameter to false.
+ * Add a value to an input or textarea element found by given selector.
+ *
+ * :::info
+ *
+ * If you like to use special characters, e.g. to copy and paste a value from one input to another, use the
+ * [`keys`](/docs/api/browser/keys) command.
+ *
+ * :::
  *
  * <example>
     :addValue.js
-    it('should demonstrate the addValue command', () => {
-        let input = $('.input')
-        input.addValue('test')
-        input.addValue(123)
+    it('should demonstrate the addValue command', async () => {
+        let input = await $('.input')
+        await input.addValue('test')
+        await input.addValue(123)
 
-        value = input.getValue()
+        value = await input.getValue()
         assert(value === 'test123') // true
     })
  * </example>
  *
  * @alias element.addValue
- * @param {string | number | Array<string | number>}        value                       value to be added
- * @param {CommandOptions=}                                 options                     command options (optional)
- * @param {boolean}                                         options.translateToUnicode  enable translation string to unicode value automatically
+ * @param {string|number}  value  value to be added
+ * @param {InputOptions} additional options, exclusive to Webdriverio
  *
  */
-export default function addValue (
+export function addValue (
     this: WebdriverIO.Element,
-    value: Value | Value[],
-    { translateToUnicode = true }: CommandOptions = {}
+    value: string | number,
+    options?: InputOptions
 ) {
-    if (!isValidType(value)) {
-        log.warn('@deprecated: support for type "string", "number" or "Array<string | number>" is deprecated')
+    /**
+     * The JSONWireProtocol allowed array values and use of special characters when adding a value to an input.
+     * With the W3C protocol this was not possible anymore. This is a type check to ensure users are aware of
+     * this transition.
+     */
+    if (!VALID_TYPES.includes(typeof value)) {
+        throw new Error(
+            'The setValue/addValue command only take string or number values. ' +
+            'If you like to use special characters, use the "keys" command.'
+        )
     }
 
-    if (!this.isW3C) {
-        return this.elementSendKeys(this.elementId, transformToCharString(value, translateToUnicode) as any as string)
+    if (options) {
+        // @ts-ignore bypassing typing to pass the third parameter until we can find a better solution
+        return this.elementSendKeys(this.elementId, value.toString(), new CommandRuntimeOptions(options))
     }
-
-    return this.elementSendKeys(this.elementId, transformToCharString(value, translateToUnicode).join(''))
+    // Have this call separated so at least one of the two code lines is typed checked
+    return this.elementSendKeys(this.elementId, value.toString())
 }

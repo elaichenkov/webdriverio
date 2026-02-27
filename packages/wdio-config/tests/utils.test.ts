@@ -1,4 +1,6 @@
-import { isCloudCapability, removeLineNumbers, validObjectOrArray } from '../src/utils'
+import { describe, it, expect } from 'vitest'
+
+import { isCloudCapability, removeLineNumbers, validObjectOrArray } from '../src/utils.js'
 
 describe('utils', () => {
     describe('removeLineNumbers', () => {

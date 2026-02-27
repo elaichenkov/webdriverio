@@ -3,8 +3,11 @@
   "compilerOptions": {
     "baseUrl": ".",
     "outDir": "./build",
-    "rootDir": "./src",
+    "rootDir": "./src"
   },
+  "exclude": [
+    "build"
+  ],
   "include": [
     "src/**/*",
     "../../@types"

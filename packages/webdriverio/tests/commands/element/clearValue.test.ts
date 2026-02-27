@@ -1,12 +1,15 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+/// <reference path="../../../src/@types/async.d.ts" />
+import path from 'node:path'
+import { expect, describe, it, beforeAll, afterEach, vi } from 'vitest'
 
-const got = gotMock as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('clearValue test', () => {
-    let browser: WebdriverIO.BrowserObject
-    let elem: WebdriverIO.Element
+    let browser: WebdriverIO.Browser
+    let elem: any
 
     beforeAll(async () => {
         browser = await remote({
@@ -20,11 +23,12 @@ describe('clearValue test', () => {
 
     it('should allow to clear an input element', async () => {
         await elem.clearValue()
-        expect(got.mock.calls[2][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/clear')
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

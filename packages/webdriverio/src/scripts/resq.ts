@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type resq from 'resq'
 
 interface CustomWindow extends Window {
@@ -12,9 +13,9 @@ export const waitToLoadReact = function waitToLoadReact () {
 
 export const react$ = function react$ (
     selector: string,
-    props: any[],
-    state: Record<string, any>,
-    reactElement: HTMLElement
+    props: Record<string, unknown>,
+    state: Record<string, unknown>,
+    reactElement?: HTMLElement
 ) {
     props = props || {}
     state = state || {}
@@ -38,15 +39,15 @@ export const react$ = function react$ (
     // resq returns an array of HTMLElements if the React component is a fragment
     // if the element is a fragment, we return the first child to be passed into the driver
     return element.isFragment && element.node
-        ? (element.node as any as HTMLElement[])[0]
+        ? (element.node as unknown as HTMLElement[])[0]
         : element.node
 }
 
 export const react$$ = function react$$ (
     selector: string,
-    props: any[],
-    state: Record<string, string>,
-    reactElement: HTMLElement
+    props: Record<string, unknown>,
+    state: Record<string, unknown>,
+    reactElement?: HTMLElement
 ) {
     let elements = window.resq.resq$$(selector, reactElement)
 
@@ -69,13 +70,11 @@ export const react$$ = function react$$ (
     // [[div, div], [div, div]] => [div, div, div, div]
     let nodes: HTMLElement[] = []
 
-    elements.forEach(element => {
-        const { node, isFragment } = element
-
-        if (isFragment) {
-            nodes = nodes.concat(node || [])
-        } else if (node) {
-            nodes.push(node)
+    elements.forEach(function (element) {
+        if (element.isFragment) {
+            nodes = nodes.concat(element.node || [])
+        } else if (element.node) {
+            nodes.push(element.node)
         }
     })
 

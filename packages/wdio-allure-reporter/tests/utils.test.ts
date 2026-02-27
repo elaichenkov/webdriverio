@@ -1,65 +1,98 @@
-import process from 'process'
-import CompoundError from '../src/compoundError'
-import { getTestStatus, isEmpty, tellReporter, isMochaEachHooks, getErrorFromFailedTest, isMochaAllHooks, getLinkByTemplate } from '../src/utils'
-import { linkPlaceholder, testStatuses } from '../src/constants'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { CommandArgs } from '@wdio/type'
+import process from 'node:process'
+import { Status } from 'allure-js-commons'
+import CompoundError from '../src/compoundError.js'
+import {
+    convertSuiteTagsToLabels,
+    findLast,
+    getErrorFromFailedTest,
+    getLinkByTemplate,
+    getTestStatus,
+    isAllTypeHooks,
+    isBeforeEachTypeHook,
+    isEachTypeHooks,
+    isEmpty,
+    isScreenshotCommand,
+} from '../src/utils.js'
+import { linkPlaceholder } from '../src/constants.js'
 
 describe('utils', () => {
     let processEmit: any
     beforeAll(() => {
         processEmit = process.emit.bind(process)
-        process.emit = jest.fn()
+        process.emit = vi.fn() as any
     })
 
-    afterAll(() => {
+    afterEach(() => {
         process.emit = processEmit
+    })
+
+    describe('isScreenshotCommand', () => {
+        it('isScreenshotCommand', () => {
+            expect(isScreenshotCommand({ endpoint: '/session/id/screenshot' } as CommandArgs)).toEqual(true)
+            expect(isScreenshotCommand({ endpoint: '/wdu/hub/session/id/screenshot' } as CommandArgs)).toEqual(true)
+            expect(isScreenshotCommand({ endpoint: '/session/id/click' } as CommandArgs)).toEqual(false)
+            expect(isScreenshotCommand({ command: 'takeScreenshot' } as CommandArgs)).toEqual(true)
+            expect(isScreenshotCommand({ command: 'elementClick' } as CommandArgs)).toEqual(false)
+            expect(isScreenshotCommand({ endpoint: '/session/id/element/id/screenshot' } as CommandArgs)).toEqual(true)
+        })
     })
 
     describe('getTestStatus', () => {
         it('return  status for jasmine', () => {
-            expect(getTestStatus({} as any, { framework: 'jasmine' })).toEqual(testStatuses.FAILED)
+            const config: any = { framework: 'jasmine' }
+            expect(getTestStatus({} as any, config)).toEqual(Status.FAILED)
         })
 
         it('broken for test with no error', () => {
-            const config = { framework: 'mocha' }
-            expect(getTestStatus({} as any, config)).toEqual(testStatuses.BROKEN)
+            const config: any = { framework: 'mocha' }
+            expect(getTestStatus({} as any, config)).toEqual(Status.BROKEN)
         })
 
         it('failed for AssertionError', () => {
-            const config = { framework: 'mocha' }
+            const config: any = { framework: 'mocha' }
             const test = { error: { name: 'Error', message: 'AssertionError' } }
-            expect(getTestStatus(test as any, config)).toEqual(testStatuses.FAILED)
+            expect(getTestStatus(test as any, config)).toEqual(Status.FAILED)
         })
 
         it('failed for AssertionError stacktrace', () => {
-            const config = { framework: 'mocha' }
+            const config: any = { framework: 'mocha' }
             const test = { error: { stack: 'AssertionError' } }
-            expect(getTestStatus(test as any, config)).toEqual(testStatuses.FAILED)
+            expect(getTestStatus(test as any, config)).toEqual(Status.FAILED)
         })
 
         it('broken for not AssertionError', () => {
-            const config = { framework: 'mocha' }
+            const config: any = { framework: 'mocha' }
             const test = { error: { name: 'MyError' } }
-            expect(getTestStatus(test as any, config)).toEqual(testStatuses.BROKEN)
+            expect(getTestStatus(test as any, config)).toEqual(Status.BROKEN)
         })
 
         it('broken for error without stacktrace', () => {
-            const config = { framework: 'mocha' }
+            const config: any = { framework: 'mocha' }
             const test = { error: {} }
-            expect(getTestStatus(test as any, config)).toEqual(testStatuses.BROKEN)
+            expect(getTestStatus(test as any, config)).toEqual(Status.BROKEN)
         })
 
         it('failed status for not AssertionError stacktrace', () => {
-            const config = { framework: 'mocha' }
+            const config: any = { framework: 'mocha' }
             const test = { error: { stack: 'MyError stack trace' } }
-            expect(getTestStatus(test as any, config)).toEqual(testStatuses.BROKEN)
+            expect(getTestStatus(test as any, config)).toEqual(Status.BROKEN)
         })
     })
 
     it('isMochaEachHooks filter hook by title', () => {
-        expect(isMochaEachHooks('"before all" hook')).toEqual(false)
-        expect(isMochaEachHooks('"after all" hook')).toEqual(false)
-        expect(isMochaEachHooks('"before each" hook')).toEqual(true)
-        expect(isMochaEachHooks('"after each" hook')).toEqual(true)
+        expect(isEachTypeHooks('"before all" hook')).toEqual(false)
+        expect(isEachTypeHooks('"after all" hook')).toEqual(false)
+        expect(isEachTypeHooks('"before each" hook')).toEqual(true)
+        expect(isEachTypeHooks('"after each" hook')).toEqual(true)
+    })
+
+    it('isMochaBeforeEachHook filter hook by title', () => {
+        expect(isBeforeEachTypeHook('"before all" hook')).toEqual(false)
+        expect(isBeforeEachTypeHook('"after all" hook')).toEqual(false)
+        expect(isBeforeEachTypeHook('"before each" hook')).toEqual(true)
+        expect(isBeforeEachTypeHook('"after each" hook')).toEqual(false)
     })
 
     describe('isEmpty', () => {
@@ -74,33 +107,15 @@ describe('utils', () => {
 
     describe('isMochaHooks', () => {
         it('should filter hook by title', () => {
-            expect(isMochaEachHooks('"before all" hook')).toEqual(false)
-            expect(isMochaEachHooks('"after all" hook')).toEqual(false)
-            expect(isMochaEachHooks('"before each" hook')).toEqual(true)
-            expect(isMochaEachHooks('"after each" hook')).toEqual(true)
+            expect(isEachTypeHooks('"before all" hook')).toEqual(false)
+            expect(isEachTypeHooks('"after all" hook')).toEqual(false)
+            expect(isEachTypeHooks('"before each" hook')).toEqual(true)
+            expect(isEachTypeHooks('"after each" hook')).toEqual(true)
 
-            expect(isMochaAllHooks('"before all" hook')).toEqual(true)
-            expect(isMochaAllHooks('"after all" hook')).toEqual(true)
-            expect(isMochaAllHooks('"before each" hook')).toEqual(false)
-            expect(isMochaAllHooks('"after each" hook')).toEqual(false)
-        })
-    })
-
-    describe('tellReporter', () => {
-        afterEach(() => {
-            (process.emit as jest.Mock).mockClear()
-        })
-
-        it('should accept message', () => {
-            tellReporter('foo', { bar: 'baz' })
-            expect(process.emit).toHaveBeenCalledTimes(1)
-            expect(process.emit).toHaveBeenCalledWith('foo', { bar: 'baz' })
-        })
-
-        it('should accept no message', () => {
-            tellReporter('foo')
-            expect(process.emit).toHaveBeenCalledTimes(1)
-            expect(process.emit).toHaveBeenCalledWith('foo', {})
+            expect(isAllTypeHooks('"before all" hook')).toEqual(true)
+            expect(isAllTypeHooks('"after all" hook')).toEqual(true)
+            expect(isAllTypeHooks('"before each" hook')).toEqual(false)
+            expect(isAllTypeHooks('"after each" hook')).toEqual(false)
         })
     })
 
@@ -113,25 +128,34 @@ describe('utils', () => {
         // wdio-mocha-framework returns a single 'error', while wdio-jasmine-framework returns an array of 'errors'
         it('should return just the error property when there is no errors property', () => {
             const testStat = {
-                error: new Error('Everything is Broken Forever')
+                error: new Error('Everything is Broken Forever'),
             }
-            expect(getErrorFromFailedTest(testStat as any)!.message).toBe('Everything is Broken Forever')
+            expect(getErrorFromFailedTest(testStat as any)!.message).toBe(
+                'Everything is Broken Forever'
+            )
         })
 
         it('should return a single error when there is an errors array with one error', () => {
             const testStat = {
                 errors: [new Error('Everything is Broken Forever')],
-                error: new Error('Everything is Broken Forever')
+                error: new Error('Everything is Broken Forever'),
             }
-            expect(getErrorFromFailedTest(testStat as any)!.message).toBe('Everything is Broken Forever')
+            expect(getErrorFromFailedTest(testStat as any)!.message).toBe(
+                'Everything is Broken Forever'
+            )
         })
 
         it('should return a CompoundError of the errors when there is more than one error', () => {
             const testStat = {
-                errors: [new Error('Everything is Broken Forever'), new Error('Additional things are broken')],
-                error: new Error('Everything is Broken Forever')
+                errors: [
+                    new Error('Everything is Broken Forever'),
+                    new Error('Additional things are broken'),
+                ],
+                error: new Error('Everything is Broken Forever'),
             }
-            const error = getErrorFromFailedTest(testStat as any) as CompoundError
+            const error = getErrorFromFailedTest(
+                testStat as any
+            ) as CompoundError
             expect(error instanceof CompoundError).toBe(true)
             expect(error.innerErrors).toEqual(testStat.errors)
         })
@@ -142,7 +166,9 @@ describe('utils', () => {
         const id = 'JIRA-42'
         it('should return link with task id', () => {
             const link = getLinkByTemplate(template, id)
-            expect(link).toEqual('https://youtrack.jetbrains.com/issue/JIRA-42')
+            expect(link).toEqual(
+                'https://youtrack.jetbrains.com/issue/JIRA-42'
+            )
         })
 
         it('should return id if template is not a string', () => {
@@ -152,9 +178,67 @@ describe('utils', () => {
 
         it('should throw error if template is invalid', () => {
             const template = 'foo'
-            expect(() => getLinkByTemplate(template, id))
-                .toThrow(`The link template "${template}" must contain ${linkPlaceholder} substring.`)
+            expect(() => getLinkByTemplate(template, id)).toThrow(
+                `The link template "${template}" must contain ${linkPlaceholder} substring.`
+            )
+        })
+    })
+
+    describe('findLast', () => {
+        const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+        it('should return last matched element', () => {
+            expect(findLast(arr, (el) => el % 2 === 0)).toEqual(8)
+
+        })
+
+        it('should return undefind when nothing matched', () => {
+            expect(findLast(arr, (el) => el === 10)).toEqual(undefined)
+        })
+    })
+
+    describe('getSuiteLabels', () => {
+        describe('suite stats with tags', () => {
+            it('returns allure labels', () => {
+                expect(
+                    convertSuiteTagsToLabels([
+                        {
+                            name: '@foo=bar',
+                            line: 1
+                        }
+                    ])
+                ).toEqual([
+                    {
+                        name: 'foo',
+                        value: 'bar',
+                    },
+                ])
+            })
+        })
+
+        describe('suite stats with invalid tags', () => {
+            it('returns empty array', () => {
+                expect(
+                    convertSuiteTagsToLabels([
+                        {
+                            name: 'foo bar',
+                            line: 1
+                        },
+                        {
+                            name: 'foo,bar',
+                            line: 2
+                        }
+                    ])
+                ).toEqual([])
+            })
+        })
+
+        describe('suite stats without tags', () => {
+            it('returns empty array', () => {
+                expect(convertSuiteTagsToLabels([])).toEqual(
+                    []
+                )
+            })
         })
     })
 })
-

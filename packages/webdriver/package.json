@@ -1,19 +1,33 @@
 {
   "name": "webdriver",
-  "version": "7.5.2",
+  "version": "9.24.0",
   "description": "A Node.js bindings implementation for the W3C WebDriver and Mobile JSONWire Protocol",
-  "author": "Christian Bromann <christian@saucelabs.com>",
+  "author": "Christian Bromann <mail@bromann.dev>",
   "homepage": "https://github.com/webdriverio/webdriverio/tree/main/packages/webdriver",
   "license": "MIT",
-  "main": "./build",
-  "engines": {
-    "node": ">=12.0.0"
+  "type": "module",
+  "main": "./build/index.cjs",
+  "module": "./build/index.js",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "browserSource": "./src/browser.js",
+      "browser": "./build/index.js",
+      "importSource": "./src/node.ts",
+      "import": "./build/node.js",
+      "requireSource": "./src/index.cts",
+      "require": "./build/index.cjs"
+    }
   },
   "types": "./build/index.d.ts",
   "typeScriptVersion": "3.8.3",
+  "engines": {
+    "node": ">=18.20.0"
+  },
   "repository": {
     "type": "git",
-    "url": "git://github.com/webdriverio/webdriverio.git"
+    "url": "git+https://github.com/webdriverio/webdriverio.git",
+    "directory": "packages/webdriver"
   },
   "keywords": [
     "webdriver"
@@ -21,16 +35,17 @@
   "bugs": {
     "url": "https://github.com/webdriverio/webdriverio/issues"
   },
-  "devDependencies": {
-    "@types/lodash.merge": "^4.6.6"
-  },
   "dependencies": {
-    "@wdio/config": "7.5.2",
-    "@wdio/logger": "7.4.2",
-    "@wdio/protocols": "7.4.2",
-    "@wdio/types": "7.5.2",
-    "@wdio/utils": "7.5.2",
-    "got": "^11.0.2",
-    "lodash.merge": "^4.6.1"
+    "@types/node": "^20.1.0",
+    "@types/ws": "^8.5.3",
+    "@wdio/config": "workspace:*",
+    "@wdio/logger": "workspace:*",
+    "@wdio/protocols": "workspace:*",
+    "@wdio/types": "workspace:*",
+    "@wdio/utils": "workspace:*",
+    "deepmerge-ts": "^7.0.3",
+    "https-proxy-agent": "^7.0.6",
+    "undici": "^6.21.3",
+    "ws": "^8.8.0"
   }
 }

@@ -1,12 +1,14 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, afterEach, beforeAll, vi } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('getTagName test', () => {
-    let browser: WebdriverIO.BrowserObject
-    let elem: WebdriverIO.Element
+    let browser: WebdriverIO.Browser
+    let elem: any
 
     beforeAll(async () => {
         browser = await remote({
@@ -20,11 +22,12 @@ describe('getTagName test', () => {
 
     it('should allow to get the tag name of an element', async () => {
         await elem.getTagName()
-        expect(got.mock.calls[2][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/name')
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

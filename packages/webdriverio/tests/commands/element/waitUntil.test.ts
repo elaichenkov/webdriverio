@@ -1,13 +1,13 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, vi, beforeAll, afterEach } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
 
-jest.setTimeout(10 * 1000)
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('waitUntil', () => {
-    let browser: WebdriverIO.BrowserObject
+    let browser: WebdriverIO.Browser
 
     beforeAll(async () => {
         browser = await remote({
@@ -25,6 +25,6 @@ describe('waitUntil', () => {
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

@@ -1,65 +1,55 @@
 import { capabilitiesEnvironmentDetector } from '@wdio/utils'
-import type { Capabilities, Options } from '@wdio/types'
-import type { AttachOptions } from 'webdriver'
+import type { Capabilities } from '@wdio/types'
 
-/**
- * these commands can be used outside test scope and may be used accidentally by user before browser session is started
- */
-const WARN_ON_COMMANDS = ['addCommand', 'overwriteCommand']
+const NOOP = () => {}
 
 /**
  * create `browser` object with capabilities and environment flags before session is started
  * so that Mocha/Jasmine users can filter their specs based on flags or use capabilities in test titles
  */
 export default class ProtocolStub {
-    static async newSession (options: Options.WebDriver) {
-        const capabilities = emulateSessionCapabilities(
-            (options.capabilities || {}) as unknown as Capabilities.DesiredCapabilities
-        )
+    static async newSession (options: Capabilities.RemoteConfig) {
+        const capabilities = emulateSessionCapabilities(options.capabilities)
 
-        const browser = addCommands({
+        const browser = {
+            options,
             capabilities,
-            ...capabilitiesEnvironmentDetector(capabilities, (options as any)._automationProtocol || 'webdriver')
-        })
+            requestedCapabilities: capabilities,
+            customCommands: [] as unknown[], // internally used to transfer custom commands to the actual protocol instance
+            overwrittenCommands: [] as unknown[], // internally used to transfer overwritten commands to the actual protocol instance
+            commandList: [],
+            getWindowHandle: NOOP,
+            on: NOOP,
+            off: NOOP,
+            addCommand: NOOP,
+            overwriteCommand: NOOP,
+            ...capabilitiesEnvironmentDetector(capabilities)
+        }
 
-        return browser
+        browser.addCommand = (...args: unknown[]) => browser.customCommands.push(args)
+        browser.overwriteCommand = (...args: unknown[]) => browser.overwrittenCommands.push(args)
+        return browser as unknown as WebdriverIO.Browser
     }
 
     /**
-     * added just in case user wants to somehow reload webdriver or devtools session
-     * before it was started.
+     * added just in case user wants to somehow reload webdriver before it was started.
      */
     static reloadSession () {
-        throw new Error('Protocol Stub: Make sure to start webdriver or devtools session before reloading it.')
+        throw new Error('Protocol Stub: Make sure to start the session before reloading it.')
     }
 
-    static attachToSession (
-        options: AttachOptions,
-        modifier?: (...args: any[]) => any
-    ) {
+    static attachToSession (options: never, modifier?: Function) {
         if (options || !modifier) {
-            return ProtocolStub.newSession(options as any)
+            throw new Error('You are trying to attach to a protocol stub, this should never occur, please file an issue.')
         }
 
         /**
-         * MultiRemote
+         * MultiRemote is needed
          */
-        return addCommands(modifier({
+        return modifier({
             commandList: []
-        }))
+        })
     }
-}
-
-/**
- * provide better visibility to users that want to add / overwrite commands
- * before session is started
- * @param {object} browser
- */
-function addCommands (browser: Record<string, any>) {
-    WARN_ON_COMMANDS.forEach((commandName) => {
-        browser[commandName] = commandNotAvailable(commandName)
-    })
-    return browser
 }
 
 /**
@@ -68,8 +58,8 @@ function addCommands (browser: Record<string, any>) {
  * @param   {object} caps user defined capabilities
  * @return  {object}
  */
-function emulateSessionCapabilities (caps: Capabilities.DesiredCapabilities) {
-    const capabilities: Record<string, any> = {}
+function emulateSessionCapabilities (caps: Capabilities.RequestedStandaloneCapabilities) {
+    const capabilities: Record<string, unknown> = {}
 
     // remove appium vendor prefix from capabilities
     Object.entries(caps).forEach(([key, value]) => {
@@ -78,17 +68,10 @@ function emulateSessionCapabilities (caps: Capabilities.DesiredCapabilities) {
     })
 
     // isChrome
-    if (caps.browserName && caps.browserName.toLowerCase() === 'chrome') {
-        capabilities.chrome = true
+    const c = 'alwaysMatch' in caps ? caps.alwaysMatch : caps
+    if (c.browserName && c.browserName.toLowerCase() === 'chrome') {
+        capabilities['goog:chromeOptions'] = {}
     }
 
     return capabilities
-}
-
-/**
- * warn user to avoid usage of command before browser session is started.
- * @param {string} commandName
- */
-function commandNotAvailable (commandName: string) {
-    return () => { throw new Error(`Unable to use '${commandName}' before browser session is started.`) }
 }

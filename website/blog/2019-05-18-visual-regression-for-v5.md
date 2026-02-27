@@ -1,11 +1,17 @@
 ---
 title: Visual Regression for V5
-author: Wim Selles
-authorURL: http://github.com/wswebcreation
-authorImageURL: https://avatars2.githubusercontent.com/u/11979740?s=460&v=4
+authors: wim
 ---
 
 We are pleased to announce that we now have a new Visual Regression service for WebdriverIO V5 called `wdio-image-comparison-service`.
+
+<!-- truncate -->
+
+:::info NEW UPDATED SERVICE
+
+We have updated the service and renamed its package name as part of that update. Please find all documentation about WebdriverIO Visual Testing [in the docs](/docs/visual-testing).
+
+:::
 
 ## What can it do?
 *wdio-image-comparison-service* is a lightweight *WebdriverIO* service for browsers / mobile browsers / hybrid apps to do image comparison on screens, elements or full page screens.
@@ -114,7 +120,7 @@ describe('Example', () => {
 
 **If you run for the first time without having a baseline the `check`-methods will reject the promise with the following warning:**
 
-```bash
+```sh
 #####################################################################################
  Baseline image not found, save the actual image manually to the baseline.
  The image can be found here:
@@ -186,7 +192,7 @@ const checkResult = {
 See the [Check output on failure](https://github.com/wswebcreation/wdio-image-comparison-service/blob/master/docs/OUTPUT.md#check-output-on-failure) section in the [output](https://github.com/wswebcreation/wdio-image-comparison-service/blob/master/docs/OUTPUT.md) docs for the images.
 
 # Support
-If you need support you can find me on the `wdio-image-comparison-service`- Gitter channel, or click on this link [![Gitter chat](https://badges.gitter.im/wswebcreation/wdio-image-comparison-service.png)](https://gitter.im/wswebcreation/wdio-image-comparison-service "Gitter chat")
+If you need support you can help in the community [Discord](https://discord.webdriver.io) server.
 
 Happy testing!
 

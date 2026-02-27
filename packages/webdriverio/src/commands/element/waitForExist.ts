@@ -1,4 +1,5 @@
-import type { WaitForOptions } from '../../types'
+import { ELEMENT_KEY } from 'webdriver'
+import type { WaitForOptions, ChainablePromiseElement } from '../../types.js'
 
 /**
  *
@@ -8,26 +9,33 @@ import type { WaitForOptions } from '../../types'
  * error. If the reverse flag is true, the command will instead return true
  * if the selector does not match any elements.
  *
+ * :::info
+ *
+ * As opposed to other element commands WebdriverIO will not wait for the
+ * element to exist to execute this command.
+ *
+ * :::
+ *
  * <example>
     :waitForExistSyncExample.js
-    it('should display a notification message after successful form submit', function () {
-        const form = $('form');
-        const notification = $('.notification');
-        form.$(".send").click();
-        notification.waitForExist({ timeout: 5000 });
-        expect(notification.getText()).to.be.equal('Data transmitted successfully!')
+    it('should display a notification message after successful form submit', async () => {
+        const form = await $('form');
+        const notification = await $('.notification');
+        await form.$(".send").click();
+        await notification.waitForExist({ timeout: 5000 });
+        expect(await notification.getText()).to.be.equal('Data transmitted successfully!')
     });
-    it('should remove a message after successful form submit', function () {
-        const form = $('form');
-        const message = $('.message');
-        form.$(".send").click();
-        message.waitForExist({ reverse: true });
+    it('should remove a message after successful form submit', async () => {
+        const form = await $('form');
+        const message = await $('.message');
+        await form.$(".send").click();
+        await message.waitForExist({ reverse: true });
     });
  * </example>
  *
  * @alias element.waitForExist
  * @param {WaitForOptions=}  options             waitForEnabled options (optional)
- * @param {Number=}          options.timeout     time in ms (default: 500)
+ * @param {Number=}          options.timeout     time in ms (default set based on [`waitforTimeout`](/docs/configuration#waitfortimeout) config value)
  * @param {Boolean=}         options.reverse     if true it waits for the opposite (default: false)
  * @param {String=}          options.timeoutMsg  if exists it overrides the default error message
  * @param {Number=}          options.interval    interval between checks (default: `waitforInterval`)
@@ -36,7 +44,7 @@ import type { WaitForOptions } from '../../types'
  * @type utility
  *
  */
-export default function waitForExist (
+export async function waitForExist (
     this: WebdriverIO.Element,
     {
         timeout = this.options.waitforTimeout,
@@ -45,8 +53,51 @@ export default function waitForExist (
         timeoutMsg = `element ("${this.selector}") still ${reverse ? '' : 'not '}existing after ${timeout}ms`
     }: WaitForOptions = {}
 ) {
-    return this.waitUntil(
+    const isExisting = await this.waitUntil(
         async () => reverse !== await this.isExisting(),
         { timeout, interval, timeoutMsg }
     )
+
+    /**
+     * If we were waiting for an element to exist and it did, we can update the
+     * elementId of the current element and remove the error. This is important
+     * as the user may expect to be able to access an element id after it has
+     * calling `waitForExist`.
+     */
+    if (!reverse && isExisting && typeof this.selector === 'string') {
+        /**
+         * If the element already has a valid elementId, we don't need to refetch it.
+         * This prevents overwriting the element with a different one if the DOM order changed.
+         */
+        let isCurrentIdValid = false
+        if (this.elementId) {
+            try {
+                await this.getElementTagName(this.elementId)
+                isCurrentIdValid = true
+            } catch {
+                // ignore
+            }
+        }
+
+        if (!isCurrentIdValid) {
+            let element: WebdriverIO.Element | ChainablePromiseElement
+
+            if (this.index !== undefined) {
+                const elements = this.isShadowElement
+                    ? await this.parent.shadow$$(this.selector as string)
+                    : await this.parent.$$(this.selector as string)
+                element = elements[this.index]
+            } else {
+                element = this.isShadowElement
+                    ? this.parent.shadow$(this.selector)
+                    : this.parent.$(this.selector)
+            }
+
+            this.elementId = await element.elementId
+            this[ELEMENT_KEY] = this.elementId
+        }
+        delete this.error
+    }
+
+    return isExisting
 }

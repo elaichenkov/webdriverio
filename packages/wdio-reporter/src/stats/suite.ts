@@ -1,7 +1,7 @@
-import { Tag } from '../types'
-import HookStats from './hook'
-import RunnableStats from './runnable'
-import TestStats from './test'
+import type HookStats from './hook.js'
+import RunnableStats from './runnable.js'
+import type TestStats from './test.js'
+import type { Tag } from '../types.js'
 
 export interface Suite {
     type?: string
@@ -16,6 +16,8 @@ export interface Suite {
     uid?: string
     tags?: string[] | Tag[]
     description?: string
+    rule?: string
+    retries?: number
 }
 
 /**
@@ -31,11 +33,14 @@ export default class SuiteStats extends RunnableStats {
     tests: TestStats[] = []
     hooks: HookStats[] = []
     suites: SuiteStats[] = []
+    parent?: string
+    retries = 0
     /**
      * an array of hooks and tests stored in order as they happen
      */
     hooksAndTests: (HookStats | TestStats)[] = []
     description?: string
+    rule?: string
 
     constructor (suite: Suite) {
         super(suite.type || 'suite')
@@ -45,9 +50,21 @@ export default class SuiteStats extends RunnableStats {
         this.title = suite.title
         this.fullTitle = suite.fullTitle
         this.tags = suite.tags
+        this.parent= suite.parent
         /**
          * only Cucumber
          */
         this.description = suite.description
+        this.rule = suite.rule
+    }
+
+    /**
+     * Mark suite as retried and remove previous history.
+     */
+    retry () {
+        this.retries++
+        this.tests = []
+        this.hooks = []
+        this.hooksAndTests = []
     }
 }

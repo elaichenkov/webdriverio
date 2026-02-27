@@ -7,7 +7,7 @@
  * @param {Array}   hookResults hook functions results array
  * @param {string}  cid         cid
  */
-export const logHookError = (hookName: string, hookResults: any[] = [], cid: string) => {
+export const logHookError = (hookName: string, hookResults: unknown[] = [], cid: string) => {
     const result = hookResults.find(result => result instanceof Error)
     if (typeof result === 'undefined') {
         return
@@ -26,9 +26,11 @@ export const logHookError = (hookName: string, hookResults: any[] = [], cid: str
         state: 'fail'
     }
 
-    process.send!({
-        origin: 'reporter',
-        name: 'printFailureMessage',
-        content
-    })
+    if (globalThis.process && typeof globalThis.process.send === 'function') {
+        globalThis.process.send!({
+            origin: 'reporter',
+            name: 'printFailureMessage',
+            content
+        })
+    }
 }

@@ -1,11 +1,12 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import got from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, beforeAll, afterEach, vi } from 'vitest'
 
-jest.setTimeout(10 * 1000)
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
 
 describe('waitUntil', () => {
-    let browser: WebdriverIO.BrowserObject
+    let browser: WebdriverIO.Browser
 
     beforeAll(async () => {
         browser = await remote({
@@ -28,8 +29,8 @@ describe('waitUntil', () => {
                 timeoutMsg: 'Timed Out',
                 interval: 200
             })
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error.message).toContain('Condition is not a function')
             expect(val).toBeUndefined()
@@ -39,7 +40,6 @@ describe('waitUntil', () => {
     it.each([false, '', 0])('Should throw an error when the waitUntil times out e.g. doesnt resolve to a truthy value: %i', async () => {
         let error
         let val
-        // @ts-ignore uses expect-webdriverio
         expect.assertions(2)
         try {
             val = await browser.waitUntil(
@@ -54,8 +54,8 @@ describe('waitUntil', () => {
                     interval: 200
                 }
             )
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error.message).toContain('Timed Out')
             expect(val).toBeUndefined()
@@ -65,12 +65,11 @@ describe('waitUntil', () => {
     it('Should throw an error when the promise is rejected', async () => {
         let error
         let val
-        // @ts-ignore uses expect-webdriverio
-        expect.assertions(2)
+        expect.assertions(3)
         try {
             val = await browser.waitUntil(
                 () => new Promise<boolean>(
-                    (resolve, reject) => setTimeout(
+                    (_, reject) => setTimeout(
                         () => reject(new Error('foobar')),
                         200
                     )
@@ -80,10 +79,35 @@ describe('waitUntil', () => {
                     interval: 200
                 }
             )
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error.message).toContain('waitUntil condition failed with the following reason: foobar')
+            expect(error.stack).toContain(`browser${path.sep}waitUntil.test.ts:73`)
+            expect(val).toBeUndefined()
+        }
+    })
+
+    it('should throw an error if the condition throws', async () => {
+        let error
+        let val
+        // @ts-ignore uses expect-webdriverio
+        expect.assertions(3)
+        try {
+            val = await browser.waitUntil(
+                () => {
+                    throw new Error('foobar')
+                }, {
+                    timeout: 500,
+                    timeoutMsg: 'Timed Out',
+                    interval: 200
+                }
+            )
+        } catch (err: any) {
+            error = err
+        } finally {
+            expect(error.message).toContain('waitUntil condition failed with the following reason: foobar')
+            expect(error.stack).toContain(`browser${path.sep}waitUntil.test.ts:99`)
             expect(val).toBeUndefined()
         }
     })
@@ -103,13 +127,15 @@ describe('waitUntil', () => {
                     timeout: 500
                 }
             )
-        } catch (e) {
-            expect(e.message).toContain('waitUntil condition failed with the following reason: Error')
+        } catch (err: any) {
+            expect(err.message).toContain('waitUntil condition failed with the following reason: Error')
             expect(val).toBeUndefined()
         }
     })
 
-    it('Should use default timeout setting from config if passed in value is not a number', async () => {
+    it('Should use default timeout setting from config if passed in value is not a number', {
+        timeout: 10_000
+    }, async () => {
         let error
         let val
         // @ts-ignore uses expect-webdriverio
@@ -123,12 +149,13 @@ describe('waitUntil', () => {
                         500
                     )
                 ), {
+                    // @ts-expect-error wrong parameter
                     timeout: 'blah',
                     interval: 200
                 }
             )
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error.message).toMatch(/waitUntil condition timed out after \d+ms/)
             expect(val).toBeUndefined()
@@ -151,11 +178,12 @@ describe('waitUntil', () => {
                 ), {
                     timeout: 1000,
                     timeoutMsg: 'Timed Out',
+                    // @ts-expect-error wrong parameter
                     interval: 'blah'
                 }
             )
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error.message).toContain('Timed Out')
             expect(val).toBeUndefined()
@@ -180,15 +208,52 @@ describe('waitUntil', () => {
                     interval: 200
                 }
             )
-        } catch (e) {
-            error = e
+        } catch (err: any) {
+            error = err
         } finally {
             expect(error).toBeUndefined()
             expect(val).toBe(n)
         }
     })
 
+    it.each([false, '', 0])('Should throw a custom error message when the waitUntil always returns false: %i', async (n) => {
+        let error
+        let val
+        // @ts-ignore uses expect-webdriverio
+        expect.assertions(2)
+        try {
+            val = await browser.waitUntil(() => n, {
+                timeout: 500,
+                timeoutMsg: 'Custom error message',
+                interval: 200
+            })
+        } catch (err: any) {
+            error = err
+        } finally {
+            expect(error.message).toContain('Custom error message')
+            expect(val).toBeUndefined()
+        }
+    })
+
+    it.each([false, '', 0])('if no timeousMsg is given, Should throw a default error message when the waitUntil always returns false: %i', async (n) => {
+        let error
+        let val
+        // @ts-ignore uses expect-webdriverio
+        expect.assertions(2)
+        try {
+            val = await browser.waitUntil(() => n, {
+                timeout: 500,
+                interval: 200
+            })
+        } catch (err: any) {
+            error = err
+        } finally {
+            expect(error.message).toMatch(/waitUntil condition timed out after \d+ms/)
+            expect(val).toBeUndefined()
+        }
+    })
+
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

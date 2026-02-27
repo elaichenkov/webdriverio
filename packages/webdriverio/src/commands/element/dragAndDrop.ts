@@ -1,18 +1,7 @@
-import { ELEMENT_KEY } from '../../constants'
+import { ELEMENT_KEY } from 'webdriver'
 import type { ElementReference } from '@wdio/protocols'
-
-const ACTION_BUTTON = 0
-
-const sleep = (time = 0) => new Promise((resolve) => setTimeout(resolve, time))
-
-type DragAndDropOptions = {
-    duration?: number
-}
-
-type ElementCoordinates = {
-    x?: number
-    y?: number
-}
+import { getBrowserObject } from '@wdio/utils'
+import type { ChainablePromiseElement, DragAndDropCoordinate, DragAndDropOptions } from '../../types.js'
 
 /**
  *
@@ -28,30 +17,30 @@ type ElementCoordinates = {
  *
  * <example>
     :example.test.js
-    it('should demonstrate the dragAndDrop command', () => {
+    it('should demonstrate the dragAndDrop command', async () => {
         const elem = $('#someElem')
         const target = $('#someTarget')
 
         // drag and drop to other element
-        elem.dragAndDrop(target)
+        await elem.dragAndDrop(target)
 
         // drag and drop relative from current position
-        elem.dragAndDrop({ x: 100, y: 200 })
+        await elem.dragAndDrop({ x: 100, y: 200 })
     })
  * </example>
  *
  * @alias element.dragAndDrop
- * @param {Element|DragAndDropCoordinate} target  destination element or object with x and y properties
- * @param {DragAndDropOptions=} options           dragAndDrop command options
- * @param {Number=}             options.duration  how long the drag should take place
+ * @param {Element|DragAndDropCoordinate}   target            destination element or object with x and y properties
+ * @param {DragAndDropOptions=}             options           dragAndDrop command options
+ * @param {Number=}                         options.duration  how long the drag should take place
  */
-export default async function dragAndDrop (
+export async function dragAndDrop (
     this: WebdriverIO.Element,
-    target: WebdriverIO.Element | ElementCoordinates,
-    { duration = 10 }: DragAndDropOptions = {}
+    target: WebdriverIO.Element | ChainablePromiseElement | Partial<DragAndDropCoordinate>,
+    options: DragAndDropOptions = {}
 ) {
-    const moveToCoordinates = target as ElementCoordinates
-    const moveToElement = target as WebdriverIO.Element
+    const moveToCoordinates = target as DragAndDropCoordinate
+    const moveToElement = await target as WebdriverIO.Element
 
     /**
      * fail if
@@ -60,12 +49,12 @@ export default async function dragAndDrop (
         /**
          * no target was specified
          */
-        !target ||
+        !moveToElement ||
         (
             /**
              * target is not from type element
              */
-            target.constructor.name !== 'Element' &&
+            moveToElement.constructor.name !== 'Element' &&
             /**
              * and is also not an object with x and y number parameters
              */
@@ -78,24 +67,15 @@ export default async function dragAndDrop (
         throw new Error('command dragAndDrop requires an WebdriverIO Element or and object with "x" and "y" variables as first parameter')
     }
 
+    const ACTION_BUTTON = 0 as const
+    const browser = getBrowserObject(this)
+    const defaultOptions = { duration: browser.isMobile ? 250 : 10 }
+    const { duration } = { ...defaultOptions, ...options }
+
     /**
      * allow to specify an element or an x/y vector
      */
-    const isMovingToElement = target.constructor.name === 'Element'
-
-    if (!this.isW3C) {
-        await this.moveTo()
-        await this.buttonDown(ACTION_BUTTON)
-
-        if (isMovingToElement) {
-            await moveToElement.moveTo()
-        } else {
-            await this.moveToElement(null, moveToCoordinates.x, moveToCoordinates.y)
-        }
-
-        await sleep(duration)
-        return this.buttonUp(ACTION_BUTTON)
-    }
+    const isMovingToElement = moveToElement.constructor.name === 'Element'
 
     const sourceRef: ElementReference = { [ELEMENT_KEY]: this[ELEMENT_KEY] }
     const targetRef: ElementReference = { [ELEMENT_KEY]: moveToElement[ELEMENT_KEY] }
@@ -109,16 +89,14 @@ export default async function dragAndDrop (
     /**
      * W3C way of handle the drag and drop action
      */
-    return this.performActions([{
-        type: 'pointer',
-        id: 'finger1',
-        parameters: { pointerType: 'mouse' },
-        actions: [
-            { type: 'pointerMove', duration: 0, origin, x: 0, y: 0 },
-            { type: 'pointerDown', button: ACTION_BUTTON },
-            { type: 'pause', duration: 10 }, // emulate human pause
-            { type: 'pointerMove', duration, origin: targetOrigin, x: targetX, y: targetY },
-            { type: 'pointerUp', button: ACTION_BUTTON }
-        ]
-    }]).then(() => this.releaseActions())
+    return browser
+        .action('pointer', {
+            parameters: { pointerType: browser.isMobile ? 'touch' : 'mouse' }
+        })
+        .move({ duration: 0, origin, x: 0, y: 0 })
+        .down({ button: ACTION_BUTTON })
+        .pause(10)
+        .move({ duration, origin: targetOrigin, x: targetX, y: targetY })
+        .up({ button: ACTION_BUTTON })
+        .perform()
 }

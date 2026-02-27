@@ -1,6 +1,22 @@
+import { expectType } from 'tsd'
+import type { Capabilities } from '@wdio/types'
+
 class CustomService {
     onPrepare() {
         // TODO: something before all workers launch
+    }
+}
+
+declare global {
+    namespace WebdriverIO {
+        interface Capabilities {
+            'wdio:customCaps'?: {
+                // a foo cap
+                foo: string
+                // a bar cap
+                bar: number
+            }
+        }
     }
 }
 
@@ -8,6 +24,13 @@ const configA: WebdriverIO.Config = {
     // @ts-expect-error should not be available
     beforeFeature () {
 
+    },
+
+    async onWorkerEnd (cid, exitCode, specs, retries) {
+        expectType<string>(cid)
+        expectType<number>(exitCode)
+        expectType<string[]>(specs)
+        expectType<number>(retries)
     },
 
     async beforeCommand (name) {
@@ -19,68 +42,31 @@ const configA: WebdriverIO.Config = {
 
 const config: WebdriverIO.Config = {
     services: [
+        // @ts-expect-error test wrong parameter
         ['sauce', {
             sauceConnect: true,
             sauceConnectOpts: {
                 directDomains: 'some.domain'
             },
-            scRelay: true,
-            // @ts-expect-error test wrong parameter
-            parentTunnel: 123
+            tunnelOwner: 123
         }],
+        // @ts-expect-error test wrong parameter
         ['appium', {
             args: {
                 basePath: 'some/path',
-                // @ts-expect-error test wrong parameter
                 port: true
             }
         }],
-        ['applitools', {
-            viewport: {
-                width: 123,
-                // @ts-expect-error test wrong parameter
-                height: 'wrong'
-            },
-            eyesProxy: {
-                url: 'some url',
-                // @ts-expect-error test wrong parameter
-                username: true,
-                password: 'pass',
-                isHttpOnly: false
-            }
-        }],
+        // @ts-expect-error test wrong parameter
         ['browserstack', {
             browserstackLocal: true,
-            // @ts-expect-error test wrong parameter
             forcedStop: 'no'
         }],
+        // @ts-expect-error test wrong parameter
         ['devtools', {
             coverageReporter: {
                 enable: true,
-                // @ts-expect-error test wrong parameter
                 type: 'foo'
-            }
-        }],
-        ['selenium-standalone', {
-            logs: 'string',
-            installArgs: {
-                version: ''
-            },
-            args: {
-                basePath: ''
-            },
-            skipSeleniumInstall: true,
-            drivers: {
-                chrome: 'yes',
-                // @ts-expect-error test wrong parameter
-                brave: 'no'
-            }
-        }],
-        ['crossbrowsertesting', {
-            // @ts-expect-error test wrong parameter
-            cbtTunnel: 'true',
-            cbtTunnelOpts: {
-                foo: 'bar'
             }
         }],
         ['firefox-profile', {
@@ -100,11 +86,11 @@ const config: WebdriverIO.Config = {
                 middleware: ''
             }]
         }],
+        // @ts-expect-error
         ['testingbot', {
             tbTunnel: true,
             tbTunnelOpts: {
                 tunnelIdentifier: 'identifier',
-                // @ts-expect-error
                 tunnelVersion: 0,
                 apiKey: 'key',
                 apiSecret: 'secret',
@@ -116,13 +102,13 @@ const config: WebdriverIO.Config = {
     ],
 
     reporters: [
+        // @ts-expect-error test wrong parameter
         ['allure', {
             issueLinkTemplate: 'foo',
-            // @ts-expect-error
             useCucumberStepReporter: 'wrong-param'
         }],
+        // @ts-expect-error test wrong parameter
         ['sumologic', {
-            // @ts-expect-error
             syncInterval: 'wrong param',
             sourceAddress: 'http://foo'
         }]
@@ -164,10 +150,19 @@ const config: WebdriverIO.Config = {
             videoName: 'test.mp4'
         }
     }, {
-        'wdio:devtoolsOptions': {
-            ignoreDefaultArgs: false
+        'moon:options': {
+            logLevel: 'INFO',
+            mobileDevice: {
+                deviceName: 'Apple iPhone XR',
+                orientation: 'portrait' as Capabilities.MoonMobileDeviceOrientation
+            }
         }
-    }] as WebDriver.DesiredCapabilities[],
+    }, {
+        'wdio:customCaps': {
+            foo: 'bar',
+            bar: 123
+        }
+    }],
 
     filesToWatch: [
         '/foo/page-objects/**/*.page.js',

@@ -1,10 +1,11 @@
-import assert from 'assert'
+import assert from 'node:assert'
 
 describe('my feature', () => {
     beforeEach(() => {})
     afterEach(() => {})
 
-    it('should do stuff', () => {
-        assert.equal(browser.getTitle(), 'Mock Page Title')
+    it('should do stuff', async () => {
+        assert.equal(await browser.getTitle(), 'Mock Page Title')
+        await expect(browser).toHaveTitle('Mock Page Title')
     })
 })

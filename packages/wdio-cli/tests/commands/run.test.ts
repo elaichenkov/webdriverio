@@ -1,59 +1,97 @@
-import fs from 'fs-extra'
-import yargs from 'yargs'
-import * as runCmd from '../../src/commands/run'
-import * as configCmd from '../../src/commands/config'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import url from 'node:url'
 
-jest.mock('./../../src/launcher', () => class {
-    run() {
-        return {
-            then: jest.fn().mockReturnValue({
-                catch: jest.fn().mockReturnValue('launcher-mock')
-            })
+import { vi, describe, it, expect, afterEach, beforeEach } from 'vitest'
+// @ts-expect-error mock
+import { yargs } from 'yargs'
+import * as runCmd from '../../src/commands/run.js'
+import { config as configCmd } from 'create-wdio/config/cli'
+
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+const fixturesPath = path.resolve(__dirname, '..', '__fixtures__')
+vi.mock('yargs')
+vi.mock('node:child_process', () => ({
+    default: {
+        spawn: vi.fn(),
+        exec: vi.fn()
+    },
+    exec: vi.fn()
+}))
+vi.mock('node:fs/promises', async (_orig) => ({
+    // ...(await orig()) as any,
+    default: {
+        access: vi.fn().mockResolvedValue(''),
+        readFile: vi.fn()
+    }
+}))
+vi.mock('create-wdio/config/cli', async (importActual)=>{
+    const actual = await importActual() as any
+    return {
+        config: {
+            ...actual.config,
+            missingConfigurationPrompt:vi.fn(),
         }
     }
 })
-jest.mock('./../../src/watcher', () => class {
-    watch() {
-        return 'watching-test'
+vi.mock('./../../src/launcher', () => ({
+    default: class {
+        constructor (public wdioConfPath: string) {}
+        run() {
+            return {
+                then: vi.fn().mockReturnValue({
+                    catch: vi.fn().mockReturnValue(`launcher-mock(${this.wdioConfPath})`)
+                })
+            }
+        }
     }
-})
-
-jest.mock('fs-extra')
+}))
+vi.mock('./../../src/watcher', () => ({
+    default: class {
+        watch() {
+            return 'watching-test'
+        }
+    }
+}))
 
 describe('Command: run', () => {
-    const setEncodingMock = jest.fn()
-    const onMock = jest.fn((s, c) => c())
+    const setEncodingMock = vi.fn()
+    const onMock = vi.fn((s, c) => c())
 
     beforeEach(() => {
-        (fs.existsSync as jest.Mock).mockImplementation(() => true)
-        ;(fs.existsSync as jest.Mock).mockClear()
-        jest.spyOn(configCmd, 'missingConfigurationPrompt').mockImplementation((): Promise<never> => {
+        vi.mocked(fs.access).mockResolvedValue()
+        vi.mocked(configCmd.missingConfigurationPrompt).mockImplementation((): Promise<never> => {
             return undefined as never
         })
-        jest.spyOn(console, 'error')
-        jest.spyOn(process, 'openStdin').mockImplementation(
-            () => ({ setEncoding: setEncodingMock, on: onMock }) as any)
+        vi.spyOn(console, 'error')
+        vi.spyOn(process.stdin, 'resume')
+        vi.spyOn(process.stdin, 'setEncoding').mockImplementation(setEncodingMock)
+        vi.spyOn(process.stdin, 'on').mockImplementation(onMock)
     })
 
     it('should call missingConfigurationPrompt if no config found', async () => {
-        (fs.existsSync as jest.Mock).mockImplementation(() => false)
-        await runCmd.handler({} as any)
-
+        vi.mocked(fs.access).mockRejectedValue('not found')
+        await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js') } as any)
         expect(configCmd.missingConfigurationPrompt).toHaveBeenCalledTimes(1)
-        expect((configCmd.missingConfigurationPrompt as jest.Mock).mock.calls[0][1])
-            .toContain('No WebdriverIO configuration found in "')
+        expect(vi.mocked(configCmd.missingConfigurationPrompt).mock.calls[0][1])
+            .toContain(path.resolve(fixturesPath, 'wdio.conf'))
+    })
 
-        ;(fs.existsSync as jest.Mock).mockClear()
+    it('should check for js and ts default config files', async () => {
+        vi.mocked(fs.access)
+            .mockRejectedValueOnce('not found')
+            .mockRejectedValueOnce('not found')
+        const result = await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js') } as any)
+        expect(result).toContain(path.resolve(fixturesPath, 'wdio.conf.ts'))
     })
 
     it('should use local conf if nothing defined', async () => {
-        (fs.existsSync as jest.Mock).mockImplementation(() => true)
-        await runCmd.handler({ argv: {} } as any)
-        expect(fs.existsSync).toBeCalledTimes(2)
+        const launcher = await runCmd.handler({ argv: {} } as any)
+        expect(launcher).toContain('wdio.conf.js')
     })
 
     it('should use Watcher if "--watch" flag is passed', async () => {
-        const watcher = await runCmd.handler({ configPath: 'foo/bar', watch: true } as any)
+        const watcher = await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js'), watch: true } as any)
 
         expect(watcher).toBe('watching-test')
     })
@@ -61,18 +99,18 @@ describe('Command: run', () => {
     it('should call launch if stdin isTTY = true', async () => {
         process.stdin.isTTY = true
 
-        const result = await runCmd.handler({ configPath: 'foo/bar' } as any)
+        const result = await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js') } as any)
 
-        expect(result).toBe('launcher-mock')
+        expect(result).toContain('launcher-mock')
     })
 
     it('should start process if stdin isTTY = false', async () => {
         process.stdin.isTTY = false
         process.stdout.isTTY = true
 
-        await runCmd.handler({ configPath: 'foo/bar' } as any)
+        await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js') } as any)
 
-        expect(process.openStdin).toHaveBeenCalled()
+        expect(process.stdin.resume).toHaveBeenCalled()
         expect(setEncodingMock).toHaveBeenCalled()
         expect(onMock).toHaveBeenCalledTimes(2)
 
@@ -88,10 +126,71 @@ describe('Command: run', () => {
         expect(yargs.help).toHaveBeenCalled()
     })
 
+    describe('launch', () => {
+        afterEach(() => {
+            delete process.env.TSCONFIG_PATH
+            delete process.env.TSX_TSCONFIG_PATH
+        })
+
+        it('should set TSX_TSCONFIG_PATH if TSCONFIG_PATH is set', async () => {
+            process.env.TSCONFIG_PATH = '/foo/bar/loo/tsconfig.e2e.json'
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js') } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'foo', 'bar', 'loo', 'tsconfig.e2e.json')
+            )
+        })
+
+        it('should set TSX_TSCONFIG_PATH if found in params', async () => {
+            vi.mocked(fs.access).mockResolvedValue()
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.js'), tsConfigPath: '/bar/foo/tsconfig.e2e.json' } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'bar', 'foo', 'tsconfig.e2e.json')
+            )
+        })
+
+        it('should set TSX_TSCONFIG_PATH if found in config file (JS)', async () => {
+            vi.mocked(fs.access).mockResolvedValue()
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.with.tsconfig.conf.js') } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'from', 'config', 'file', 'tsconfig.json')
+            )
+        })
+
+        it('should set TSX_TSCONFIG_PATH if found in config file (TS)', async () => {
+            vi.mocked(fs.access).mockResolvedValue()
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.with.tsconfig.conf.ts') } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'from', 'config', 'file', 'tsconfig.json')
+            )
+        })
+
+        it('should set TSX_TSCONFIG_PATH from cli if found in params overriding config file', async () => {
+            vi.mocked(fs.access).mockResolvedValue()
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.with.tsconfig.conf.js'), tsConfigPath: '/bar/foo/tsconfig.e2e.json' } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'bar', 'foo', 'tsconfig.e2e.json')
+            )
+        })
+
+        it('should set TSX_TSCONFIG_PATH if TSCONFIG_PATH is set overriding config file', async () => {
+            process.env.TSCONFIG_PATH = '/foo/bar/loo/tsconfig.e2e.json'
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.with.tsconfig.conf.js') } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve('/', 'foo', 'bar', 'loo', 'tsconfig.e2e.json')
+            )
+        })
+
+        it('should restart process if custom tsconfig was found next to the wdio.config', async () => {
+            vi.mocked(fs.access).mockResolvedValue()
+            await runCmd.handler({ configPath: path.resolve(fixturesPath, 'wdio.conf.ts') } as any)
+            expect(process.env.TSX_TSCONFIG_PATH).toEqual(
+                path.resolve(fixturesPath, 'tsconfig.json')
+            )
+        })
+    })
+
     afterEach(() => {
-        (process.openStdin as jest.Mock).mockReset()
-        ;(console.error as any as jest.Mock).mockReset()
-        ;(fs.existsSync as jest.Mock).mockClear()
-        ;(configCmd.missingConfigurationPrompt as jest.Mock).mockClear()
+        vi.mocked(console.error).mockReset()
+        vi.mocked(configCmd.missingConfigurationPrompt).mockClear()
     })
 })

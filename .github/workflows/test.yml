@@ -6,79 +6,80 @@ on:
   push:
     branches:
       - main
+      - v7
+      - v8
+      - '!l10n_main'
+    paths-ignore:
+      - '**/*.md'
   pull_request:
+    branches-ignore:
+      - 'l10n_main'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [12.x, 14.x, 15.x]
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        with:
-          node-version: ${{ matrix.node-version }}
-      - name: Install Dependencies
-        run: npm ci
-      - name: Bootstrap Packages
-        run: npm run setup-full
-      - name: Dependency Check
-        if: ${{ matrix.node-version == '14.x' }}
-        run: npm run test:depcheck
-      - name: Lint / Typings / Unit / Smoke Tests
-        run: npx run-s test:eslint test:typings test:coverage test:smoke
-      - name: E2E Protocol Tests
-        if: ${{ matrix.node-version == '14.x' }}
-        run: npm run test:e2e
-      - name: E2E Firefox Launch Tests
-        if: ${{ matrix.node-version == '14.x' }}
-        run: |
-          sudo add-apt-repository ppa:ubuntu-mozilla-daily/ppa
-          sudo apt-get update
-          sudo apt-get install firefox-trunk
-          npm run test:e2e:firefox
-      - name: E2E Connection Test
-        if: ${{ matrix.node-version == '14.x' && github.event_name == 'push'}}
-        run: |
-          npm run test:e2e:cloud
-        env:
-          SAUCE_USERNAME: ${{secrets.SAUCE_USERNAME}}
-          SAUCE_ACCESS_KEY: ${{secrets.SAUCE_ACCESS_KEY}}
-      - name: E2E Connection Test w/ Params
-        if: ${{ matrix.node-version == '14.x' && github.event_name == 'push'}}
-        run: |
-          npm run test:e2e:cloud -- --user $SAUCE_USERNAME_PARAM --key $SAUCE_ACCESS_KEY_PARAM
-        env:
-          SAUCE_USERNAME_PARAM: ${{secrets.SAUCE_USERNAME}}
-          SAUCE_ACCESS_KEY_PARAM: ${{secrets.SAUCE_ACCESS_KEY}}
-  e2e-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        with:
-          node-version: 14.x
-      - name: Install Dependencies
-        run: npm ci
-      - name: Bootstrap Packages
-        run: npm run setup-full
-      - name: Lint / Dependencies / Unit / Smoke Tests
-        run: npm run test
-      - name: E2E Protocol Tests
-        run: npm run test:e2e
-      - name: E2E Edge Launch Tests
-        run: npm run test:e2e:edge
-  e2e-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        with:
-          node-version: 14.x
-      - name: Install Dependencies
-        run: npm ci
-      - name: Bootstrap Packages
-        run: npm run setup-full
-      - name: E2E Protocol Tests
-        run: npm run test:e2e
+  build_core:
+    name: Build
+    uses: ./.github/workflows/build.yml
+
+  static_code_analysis:
+    name: Static Code Analysis
+    uses: ./.github/workflows/test-static.yml
+
+  typing_tests:
+    name: Typing Tests
+    needs: [build_core, static_code_analysis]
+    uses: ./.github/workflows/test-typings.yml
+
+  interop_tests:
+    name: Interop Tests
+    needs: [build_core, static_code_analysis]
+    uses: ./.github/workflows/test-interop.yml
+
+  unit_tests:
+    name: Unit Tests
+    needs: [build_core, static_code_analysis]
+    uses: ./.github/workflows/test-unit.yml
+
+  smoke_tests:
+    name: Smoke Tests
+    needs: [build_core, static_code_analysis]
+    uses: ./.github/workflows/test-smoke.yml
+
+  component_tests:
+    name: Component Tests
+    needs: [build_core, static_code_analysis]
+    uses: ./.github/workflows/test-component.yml
+
+  launch_tests:
+    name: E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-launch.yml
+
+  cloud_tests:
+    name: E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-cloud.yml
+    secrets: inherit
+
+  testrunner_tests:
+    name: E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-testrunner.yml
+
+  multiremote_tests:
+    name: E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-multiremote.yml
+
+  standalone_tests:
+    name: E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-standalone.yml
+
+  xvfb_tests:
+    name: XVFB E2E Tests
+    needs: [smoke_tests, component_tests, unit_tests, interop_tests, typing_tests]
+    uses: ./.github/workflows/test-xvfb-e2e.yml

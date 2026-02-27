@@ -1,4 +1,5 @@
-import { HookStats, SuiteStats, TestStats } from '@wdio/reporter'
+import { sep } from 'node:path'
+import type { HookStats, SuiteStats, TestStats } from '@wdio/reporter'
 
 const suite = (type = 'feature') => ({
     type,
@@ -6,14 +7,22 @@ const suite = (type = 'feature') => ({
     _duration: 0,
     uid: type === 'feature' ? 'MyFeature1' : 'MyScenario2',
     cid: '0-0',
-    title: type === 'feature' ? 'MyFeature': 'MyScenario',
-    fullTitle: type === 'feature' ? undefined: 'MyFeature1: My Scenario',
+    title: type === 'feature' ? 'MyFeature' : 'MyScenario',
+    fullTitle: type === 'feature' ? undefined : 'MyFeature1: My Scenario',
+    file: ['foo', 'bar.feature'].join(sep),
     tags: [{
         type: 'Tag',
         location: { line: 5, column: 3 },
         name: '@severity=critical'
+    }, {
+        type: 'Tag',
+        name: '@issue=BUG-987'
+    }, {
+        type: 'Tag',
+        name: '@testId=TST-123'
     }],
     tests: [],
+    parent: type === 'feature' ? undefined : 'MyFeature1',
     description: 'My scenario description',
     hooks: [],
     suites: []
@@ -28,8 +37,21 @@ const error = {
     actual: 'bar'
 }
 
-export function featureStart() {
-    return Object.assign(suite('feature'))
+const nonAssertionError = {
+    message: 'TypeError: Cannot read properties of undefined (reading "foo")',
+    stack: 'TypeError: Cannot read properties of undefined (reading "foo")',
+    name: 'Error'
+}
+
+export function featureStart(featureLabel?: string) {
+    const feature = Object.assign(suite('feature'))
+    if (featureLabel) {
+        feature.tags.push({
+            type: 'Tag',
+            name: '@feature=' + featureLabel
+        })
+    }
+    return feature
 }
 
 export function featureEnd(results = { tests: [], hooks: [] }) {
@@ -40,8 +62,24 @@ export function featureEnd(results = { tests: [], hooks: [] }) {
     })
 }
 
-export function scenarioStart() {
-    return Object.assign(suite('scenario'))
+export function featureEndWithRetries(results = [{ tests: [], hooks: [] }]) {
+    const suites = scenarioWithRetries(results)
+    return Object.assign(suite('feature'), {
+        _duration: 1516,
+        suites: suites,
+        end: '2019-07-22T12:21:37.696Z'
+    })
+}
+
+export function scenarioStart(featureLabel?: string) {
+    const scenario = Object.assign(suite('scenario'))
+    if (featureLabel) {
+        scenario.tags.push({
+            type: 'Tag',
+            name: '@feature=' + featureLabel
+        })
+    }
+    return scenario
 }
 
 export function scenarioEnd({ tests = [], hooks = [] }): SuiteStats {
@@ -51,6 +89,20 @@ export function scenarioEnd({ tests = [], hooks = [] }): SuiteStats {
         tests,
         hooks
     })
+}
+
+function scenarioWithRetries(results = [{ tests: [], hooks: [] }]): Array<SuiteStats>{
+    const allScenarios: SuiteStats[] = []
+    let scenario: SuiteStats = scenarioEnd(results[0])
+    allScenarios.push(scenario)
+
+    for (let i = 1; i < results.length; i++){
+        const nextScenario: SuiteStats = scenarioEnd(results[i])
+        scenario.suites.push(nextScenario)
+        scenario = nextScenario
+    }
+
+    return Object.assign(allScenarios, {})
 }
 
 const hook = () => ({
@@ -94,6 +146,8 @@ const test = () => ({
     cid: '0-0',
     title: 'I do something',
     fullTitle: 'MyFeature: MyScenario: I do something',
+    file: ['foo', 'bar.feature'].join(sep),
+    parent: 'MyScenario2',
     output: [],
     argument: undefined,
     state: 'pending'
@@ -106,10 +160,27 @@ const test2 = () => ({
     uid: 'I check something4',
     cid: '0-0',
     title: 'I check something',
-    fullTitle: 'MyFeature: MyScenario: I do something',
+    fullTitle: 'MyFeature: MyScenario: I check something',
+    file: ['foo', 'bar.feature'].join(sep),
+    parent: 'MyScenario2',
     output: [],
     argument: undefined,
     state: 'pending'
+} as any)
+
+const test3 = () => ({
+    type: 'test',
+    start: '2019-07-22T12:21:36.251Z',
+    _duration: 0,
+    uid: 'I check something4',
+    cid: '0-0',
+    title: 'I check something',
+    fullTitle: 'MyFeature: MyScenario: I check something',
+    file: ['foo', 'bar.feature'].join(sep),
+    parent: 'MyScenario2',
+    output: [],
+    argument: { rows: [{ cells: [] }] },
+    state: 'passed'
 } as any)
 
 export function testStart(): TestStats {
@@ -120,11 +191,25 @@ export function test2start(): TestStats {
     return Object.assign(test2())
 }
 
+export function test3Start(): TestStats {
+    return Object.assign(test3())
+}
+
 export function testFail(): TestStats {
     return Object.assign(test(), {
         _duration: 10,
         errors: [error],
         error: error,
+        state: 'failed',
+        end: '2019-07-22T12:21:37.684Z'
+    })
+}
+
+export function testFail2(){
+    return Object.assign(test(), {
+        _duration: 10,
+        errors: [nonAssertionError],
+        error: nonAssertionError,
         state: 'failed',
         end: '2019-07-22T12:21:37.684Z'
     })

@@ -1,10 +1,12 @@
-import fs from 'fs-extra'
-import ejs from 'ejs'
-import readDirMock from 'recursive-readdir'
-import childProcess from 'child_process'
-import { SevereServiceError } from 'webdriverio'
+import path from 'node:path'
+import cp from 'node:child_process'
+import fs from 'node:fs/promises'
 
-const readDir = readDirMock as jest.Mock
+import { vi, describe, it, expect, afterEach, beforeEach, test } from 'vitest'
+import readDir from 'recursive-readdir'
+import { readPackageUp } from 'read-pkg-up'
+import { SevereServiceError } from 'webdriverio'
+import { ConfigParser } from '@wdio/config/node'
 
 import {
     runLauncherHook,
@@ -12,47 +14,59 @@ import {
     runServiceHook,
     getRunnerName,
     findInConfig,
-    replaceConfig,
-    addServiceDeps,
-    convertPackageHashToObject,
-    renderConfigurationFile,
-    validateServiceAnswers,
     getCapabilities,
-    hasFile,
-    generateTestFiles,
-    getPathForFileGeneration,
-    getDefaultFiles
-} from '../src/utils'
-import { COMPILER_OPTION_ANSWERS } from '../src/constants'
+} from '../src/utils.js'
 
-jest.mock('child_process', function () {
+vi.mock('recursive-readdir', () => ({
+    default: vi.fn().mockResolvedValue([
+        '/foo/bar/loo/page.js.ejs',
+        '/foo/bar/example.e2e.js'
+    ] as any)
+}))
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+vi.mock('child_process', () => {
     const m = {
         execSyncRes: 'APPIUM_MISSING',
-        execSync: function () { return m.execSyncRes }
+        execSync: () => m.execSyncRes,
+        exec: vi.fn(),
+        spawn: vi.fn().mockReturnValue({ on: vi.fn().mockImplementation((ev, fn) => fn(0)) })
     }
-    return m
+    return { default: m }
 })
 
-jest.mock('../src/commands/config', () => ({
-    runConfig: jest.fn()
+vi.mock('read-pkg-up')
+
+vi.mock('node:fs/promises', () => ({
+    default: {
+        access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+        mkdir: vi.fn(),
+        writeFile: vi.fn().mockReturnValue(Promise.resolve())
+    }
 }))
 
-jest.mock('fs-extra', () => ({
-    existsSync: jest.fn(),
-    ensureDirSync: jest.fn(),
-    promises: {
-        writeFile: jest.fn().mockReturnValue(Promise.resolve())
+vi.mock('@wdio/config/node', () => ({
+    ConfigParser: class ConfigParserMock {
+        initialize() { }
+        getCapabilities() { }
     }
 }))
 
 beforeEach(() => {
-    global.console.log = jest.fn()
+    global.console.log = vi.fn()
+
+    vi.mocked(readPackageUp).mockResolvedValue({
+        path: '/foo/package.json',
+        packageJson: {
+            name: 'cool-test-module',
+            type: 'module'
+        }
+    })
 })
 
 describe('runServiceHook', () => {
-    const hookSuccess = jest.fn()
-    const slowSetupFn = jest.fn()
-    const asyncHookSuccess = jest.fn().mockImplementation(() => new Promise<void>(resolve => {
+    const hookSuccess = vi.fn()
+    const slowSetupFn = vi.fn()
+    const asyncHookSuccess = vi.fn().mockImplementation(() => new Promise<void>(resolve => {
         setTimeout(() => {
             slowSetupFn()
             resolve()
@@ -65,7 +79,7 @@ describe('runServiceHook', () => {
         asyncHookSuccess.mockClear()
     })
 
-    test('run sync and async hooks successfully', async () => {
+    it('run sync and async hooks successfully', async () => {
         await runServiceHook([
             { onPrepare: hookSuccess },
             { onPrepare: asyncHookSuccess },
@@ -78,7 +92,7 @@ describe('runServiceHook', () => {
     })
 
     it('executes all hooks and continues after a hook throws error', async () => {
-        const hookFailing = jest.fn().mockImplementation(() => { throw new Error('buhh') })
+        const hookFailing = vi.fn().mockImplementation(() => { throw new Error('buhh') })
 
         await runServiceHook([
             { onPrepare: hookSuccess },
@@ -95,7 +109,7 @@ describe('runServiceHook', () => {
     })
 
     it('executes all hooks and stops after a hook throws SevereServiceError', async () => {
-        const hookFailing = jest.fn().mockImplementation(() => { throw new SevereServiceError() })
+        const hookFailing = vi.fn().mockImplementation(() => { throw new SevereServiceError() })
 
         try {
             await runServiceHook([
@@ -105,7 +119,7 @@ describe('runServiceHook', () => {
                 { onPrepare: asyncHookSuccess },
                 { onPrepare: hookFailing },
             ], 'onPrepare', 1, true, 'abc')
-        } catch (err) {
+        } catch (err: any) {
             expect(err.message).toEqual(expect.stringContaining('SevereServiceError'))
             expect(err.message).toEqual(expect.stringContaining('Stopping runner...'))
             expect(hookSuccess).toBeCalledTimes(1)
@@ -117,8 +131,8 @@ describe('runServiceHook', () => {
 })
 
 test('runLauncherHook handles array of functions', () => {
-    const hookSuccess = jest.fn()
-    const hookFailing = jest.fn().mockImplementation(() => { throw new Error('buhh') })
+    const hookSuccess = vi.fn()
+    const hookFailing = vi.fn().mockImplementation(() => { throw new Error('buhh') })
 
     runLauncherHook([hookSuccess, hookFailing], 1, 2, 3, 4, 5, 6)
     expect(hookSuccess).toBeCalledTimes(1)
@@ -136,7 +150,7 @@ test('runLauncherHook handles async functions', async () => {
 })
 
 test('runLauncherHook handles a single function', () => {
-    const hookSuccess = jest.fn()
+    const hookSuccess = vi.fn()
 
     runLauncherHook(hookSuccess, 1, 2, 3, 4, 5, 6)
     expect(hookSuccess).toBeCalledTimes(1)
@@ -144,10 +158,10 @@ test('runLauncherHook handles a single function', () => {
 })
 
 test('runOnCompleteHook handles array of functions', () => {
-    const hookSuccess = jest.fn()
-    const secondHook = jest.fn()
+    const hookSuccess = vi.fn()
+    const secondHook = vi.fn()
 
-    runOnCompleteHook([hookSuccess, secondHook], { capabilities: {} }, {}, 0, {} as any)
+    runOnCompleteHook([hookSuccess, secondHook], { capabilities: [] }, {}, 0, {} as any)
     expect(hookSuccess).toBeCalledTimes(1)
     expect(secondHook).toBeCalledTimes(1)
 })
@@ -156,22 +170,22 @@ test('runOnCompleteHook handles async functions', async () => {
     const hookSuccess = () => new Promise(resolve => setTimeout(resolve, 31))
 
     const start = Date.now()
-    await runOnCompleteHook([hookSuccess], { capabilities: {} }, {}, 0, {} as any)
+    await runOnCompleteHook([hookSuccess], { capabilities: [] }, {}, 0, {} as any)
     expect(Date.now() - start).toBeGreaterThanOrEqual(30)
 })
 
 test('runOnCompleteHook handles a single function', () => {
-    const hookSuccess = jest.fn()
+    const hookSuccess = vi.fn()
 
-    runOnCompleteHook(hookSuccess, { capabilities: {} }, {}, 0, {} as any)
+    runOnCompleteHook(hookSuccess, { capabilities: [] }, {}, 0, {} as any)
     expect(hookSuccess).toBeCalledTimes(1)
 })
 
 test('runOnCompleteHook with no failure returns 0', async () => {
-    const hookSuccess = jest.fn()
-    const hookFailing = jest.fn()
+    const hookSuccess = vi.fn()
+    const hookFailing = vi.fn()
 
-    const result = await runOnCompleteHook([hookSuccess, hookFailing], { capabilities: {} }, {}, 0, {} as any)
+    const result = await runOnCompleteHook([hookSuccess, hookFailing], { capabilities: [] }, {}, 0, {} as any)
 
     expect(result).not.toContain(1)
     expect(hookSuccess).toBeCalledTimes(1)
@@ -179,30 +193,43 @@ test('runOnCompleteHook with no failure returns 0', async () => {
 })
 
 test('runOnCompleteHook with failure returns 1', async () => {
-    const hookSuccess = jest.fn()
-    const hookFailing = jest.fn().mockImplementation(() => { throw new Error('buhh') })
+    const hookSuccess = vi.fn()
+    const hookFailing = vi.fn().mockImplementation(() => { throw new Error('buhh') })
 
-    const result = await runOnCompleteHook([hookSuccess, hookFailing], { capabilities: {} }, {}, 0, {} as any)
+    const result = await runOnCompleteHook([hookSuccess, hookFailing], { capabilities: [] }, {}, 0, {} as any)
 
     expect(result).toContain(1)
     expect(hookSuccess).toBeCalledTimes(1)
     expect(hookFailing).toBeCalledTimes(1)
 })
 
+test('runOnCompleteHook fails with SevereServiceError', async () => {
+    const hookSuccess = vi.fn()
+    const hookFailing = vi.fn().mockImplementation(() => { throw new SevereServiceError('buhh') })
+
+    const result = await runOnCompleteHook([hookSuccess, hookFailing], { capabilities: [] }, {}, 0, {} as any)
+        .catch(() => 'some error')
+
+    expect(result).toBe('some error')
+    expect(hookSuccess).toBeCalledTimes(1)
+    expect(hookFailing).toBeCalledTimes(1)
+})
+
 test('getRunnerName', () => {
+    expect(getRunnerName({ 'appium:appPackage': 'foobar' })).toBe('foobar')
+    expect(getRunnerName({ 'appium:appWaitActivity': 'foobar' })).toBe('foobar')
+    expect(getRunnerName({ 'appium:app': 'foobar' })).toBe('foobar')
+    expect(getRunnerName({ 'appium:platformName': 'foobar' })).toBe('foobar')
     expect(getRunnerName({ browserName: 'foobar' })).toBe('foobar')
-    expect(getRunnerName({ appPackage: 'foobar' })).toBe('foobar')
-    expect(getRunnerName({ appWaitActivity: 'foobar' })).toBe('foobar')
-    expect(getRunnerName({ app: 'foobar' })).toBe('foobar')
     expect(getRunnerName({ platformName: 'foobar' })).toBe('foobar')
     expect(getRunnerName({})).toBe('undefined')
     expect(getRunnerName()).toBe('undefined')
     // @ts-ignore test invalid parameter
     expect(getRunnerName({ foo: {} })).toBe('undefined')
     // @ts-ignore test invalid parameter
-    expect(getRunnerName({ foo: { capabilities: {} }, bar: {} })).toBe('undefined')
+    expect(getRunnerName({ foo: { capabilities: [] }, bar: {} })).toBe('undefined')
     // @ts-ignore test invalid parameter
-    expect(getRunnerName({ foo: { capabilities: {} } })).toBe('MultiRemote')
+    expect(getRunnerName({ foo: { capabilities: [] } })).toBe('MultiRemote')
 })
 
 describe('findInConfig', () => {
@@ -223,404 +250,93 @@ describe('findInConfig', () => {
     })
 })
 
-describe('renderConfigurationFile', () => {
-    it('should write file', async () => {
-        // @ts-ignore mock feature
-        jest.spyOn(ejs, 'renderFile').mockImplementation((a, b, c) => c(null, true))
-
-        await renderConfigurationFile({ foo: 'bar' } as any)
-
-        expect(ejs.renderFile).toHaveBeenCalled()
-        expect(fs.promises.writeFile).toHaveBeenCalled()
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[0][0].endsWith('wdio.conf.js')).toBe(true)
-    })
-
-    it('should write TS file', async () => {
-        // @ts-ignore mock feature
-        jest.spyOn(ejs, 'renderFile').mockImplementation((a, b, c) => c(null, true))
-
-        await renderConfigurationFile({ isUsingTypeScript: true } as any)
-
-        expect(ejs.renderFile).toHaveBeenCalled()
-        expect(fs.promises.writeFile).toHaveBeenCalled()
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[0][0].endsWith('wdio.conf.ts')).toBe(true)
-    })
-
-    it('should throw error', async () => {
-        // @ts-ignore mock feature
-        jest.spyOn(ejs, 'renderFile').mockImplementationOnce((a, b, c) => c('test error', null))
-
-        try {
-            await renderConfigurationFile({ foo: 'bar' } as any)
-        } catch (error) {
-            expect(error).toBeTruthy()
-        }
-    })
-})
-
-describe('replaceConfig', () => {
-    it('correctly changes framework', () => {
-        const fakeConfig = `exports.config = {
-    runner: 'local',
-    specs: [
-        './test/specs/**/*.js'
-    ],
-    framework: 'mocha',
-}`
-
-        expect(replaceConfig(fakeConfig, 'framework', 'jasmine')).toBe(
-            `exports.config = {
-    runner: 'local',
-    specs: [
-        './test/specs/**/*.js'
-    ],
-    framework: 'jasmine',
-}`
-        )
-    })
-
-    it('correctly changes service', () => {
-        const fakeConfig = `exports.config = {
-    runner: 'local',
-    specs: [
-        './test/specs/**/*.js'
-    ],
-    services: ['chromedriver'],
-    framework: 'mocha',
-}`
-        expect(replaceConfig(fakeConfig, 'service', 'sauce')).toBe(
-            `exports.config = {
-    runner: 'local',
-    specs: [
-        './test/specs/**/*.js'
-    ],
-    services: ['chromedriver','sauce'],
-    framework: 'mocha',
-}`
-        )
-    })
-})
-
-describe('addServiceDeps', () => {
-    it('should add appium', () => {
-        const packages = []
-        addServiceDeps([{ package: '@wdio/appium-service', short: 'appium' }], packages)
-        expect(packages).toEqual(['appium'])
-        expect(global.console.log).not.toBeCalled()
-    })
-
-    it('should not add appium if globally installed', () => {
-        // @ts-ignore mock feature
-        childProcess.execSyncRes = '1.13.0'
-        const packages = []
-        addServiceDeps([{ package: '@wdio/appium-service', short: 'appium' }], packages)
-        expect(packages).toEqual([])
-        expect(global.console.log).not.toBeCalled()
-    })
-
-    it('should add appium and print message if update and appium globally installed', () => {
-        const packages = []
-        addServiceDeps([{ package: '@wdio/appium-service', short: 'appium' }], packages, true)
-        expect(packages).toEqual([])
-        expect(global.console.log).toBeCalled()
-    })
-
-    it('should add chromedriver', () => {
-        const packages = []
-        addServiceDeps([{ package: 'wdio-chromedriver-service', short: 'chromedriver' }], packages)
-        expect(packages).toEqual(['chromedriver'])
-        expect(global.console.log).not.toBeCalled()
-    })
-
-    it('should add chromedriver and print message if update', () => {
-        const packages = []
-        addServiceDeps([{ package: 'wdio-chromedriver-service', short: 'chromedriver' }], packages, true)
-        expect(packages).toEqual(['chromedriver'])
-        expect(global.console.log).toBeCalled()
-    })
-
-    afterEach(() => {
-        (global.console.log as jest.Mock).mockClear()
-    })
-})
-
-describe('convertPackageHashToObject', () => {
-    it('works with default `$--$` hash', () => {
-        expect(convertPackageHashToObject('test/package-name$--$package-name')).toMatchObject({
-            package: 'test/package-name',
-            short: 'package-name'
-        })
-    })
-
-    it('works with custom hash', () => {
-        expect(convertPackageHashToObject('test/package-name##-##package-name', '##-##')).toMatchObject({
-            package: 'test/package-name',
-            short: 'package-name'
-        })
-    })
-})
-
-test('validateServiceAnswers', () => {
-    expect(validateServiceAnswers(['wdio-chromedriver-service', '@wdio/selenium-standalone-service']))
-        .toContain('wdio-chromedriver-service cannot work together with @wdio/selenium-standalone-service')
-    expect(validateServiceAnswers(['@wdio/static-server-service', '@wdio/selenium-standalone-service']))
-        .toBe(true)
-})
-
 describe('getCapabilities', () => {
-    it('should return driver with capabilities for android', () => {
-        expect(getCapabilities({ option: 'foo.apk' } as any)).toMatchSnapshot()
-        expect(getCapabilities({ option: 'android' } as any)).toMatchSnapshot()
+    it('should return driver with capabilities for android', async () => {
+        expect(await getCapabilities({ option: 'foo.apk' } as any)).toMatchSnapshot()
+        expect(await getCapabilities({ option: 'android' } as any)).toMatchSnapshot()
     })
 
-    it('should return driver with capabilities for ios', () => {
-        expect(getCapabilities({ option: 'foo.app', deviceName: 'fooName', udid: 'num', platformVersion: 'fooNum' })).toMatchSnapshot()
-        expect(getCapabilities({ option: 'ios' } as any)).toMatchSnapshot()
+    it('should return driver with capabilities for ios', async () => {
+        expect(await getCapabilities({ option: 'foo.app', deviceName: 'fooName', udid: 'num', platformVersion: 'fooNum' } as any))
+            .toMatchSnapshot()
+        expect(await getCapabilities({ option: 'ios' } as any)).toMatchSnapshot()
     })
 
-    it('should return driver with capabilities for desktop', () => {
-        expect(getCapabilities({ option: 'chrome' } as any)).toMatchSnapshot()
-    })
-})
-
-test('hasFile', () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(true)
-    expect(hasFile('package.json')).toBe(true)
-    ;(fs.existsSync as jest.Mock).mockReturnValue(false)
-    expect(hasFile('xyz')).toBe(false)
-})
-
-describe('generateTestFiles', () => {
-    it('Mocha with page objects', async () => {
-        readDir.mockReturnValue(Promise.resolve([
-            '/foo/bar/loo/page.js.ejs',
-            '/foo/bar/example.e2e.js'
-        ]))
-        const answers = {
-            framework: 'mocha',
-            usePageObjects: true,
-            generateTestFiles: true,
-            destPageObjectRootPath: '/tests/page/objects/model',
-            destSpecRootPath: '/tests/specs'
-        }
-
-        await generateTestFiles(answers as any)
-
-        expect(readDir).toBeCalledTimes(2)
-        expect(readDir.mock.calls[0][0]).toContain('mochaJasmine')
-        expect(readDir.mock.calls[1][0]).toContain('pageobjects')
-
-        /**
-         * test readDir callback
-         */
-        const readDirCb = readDir.mock.calls[0][1][0]
-        const stats = { isDirectory: jest.fn().mockReturnValue(false) }
-        expect(readDirCb('/foo/bar.lala', stats)).toBe(true)
-        expect(readDirCb('/foo/bar.js.ejs', stats)).toBe(false)
-        expect(readDirCb('/foo/bar.feature', stats)).toBe(false)
-        stats.isDirectory.mockReturnValue(true)
-        expect(readDirCb('/foo/bar.lala', stats)).toBe(false)
-        expect(readDirCb('/foo/bar.js.ejs', stats)).toBe(false)
-        expect(readDirCb('/foo/bar.feature', stats)).toBe(false)
-
-        expect(ejs.renderFile).toBeCalledTimes(4)
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/loo/page.js.ejs',
-            answers,
-            expect.any(Function)
-        )
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/example.e2e.js',
-            answers,
-            expect.any(Function)
-        )
-        expect(fs.ensureDirSync).toBeCalledTimes(4)
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[0][0].endsWith('/page/objects/model/page.js'))
-            .toBe(true)
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[1][0].endsWith('/example.e2e.js'))
-            .toBe(true)
+    it('should return driver with capabilities for desktop', async () => {
+        expect(await getCapabilities({ option: 'chrome' } as any)).toMatchSnapshot()
     })
 
-    it('Jasmine with page generation and no pageObjects', async () => {
-        readDir.mockReturnValue(Promise.resolve([
-        ]))
-        const answers = {
-            specs: './tests/e2e/**/*.js',
-            framework: 'jasmine',
-            generateTestFiles: false,
-            usePageObjects: false
-        }
-
-        await generateTestFiles(answers as any)
-
-        expect(readDir).toBeCalledTimes(1)
-        expect(ejs.renderFile).toBeCalledTimes(0)
+    it('should throw config not found error', async () => {
+        const initializeMock = vi.spyOn(ConfigParser.prototype, 'initialize')
+        initializeMock.mockImplementationOnce(() => {
+            const error: any = new Error('ups')
+            error.code = 'MODULE_NOT_FOUND'
+            return Promise.reject(error)
+        })
+        await expect(() => getCapabilities({ option: './test.js', capabilities: 2 } as any))
+            .rejects.toThrowErrorMatchingSnapshot()
+        initializeMock.mockImplementationOnce(async () => { throw new Error('ups') })
+        await expect(() => getCapabilities({ option: './test.js', capabilities: 2 } as any))
+            .rejects.toThrowErrorMatchingSnapshot()
     })
 
-    it('Cucumber with page generation and no pageObjects', async () => {
-        readDir.mockReturnValue(Promise.resolve([]))
-        const answers = {
-            specs: './tests/e2e/**/*.js',
-            framework: 'cucumber',
-            generateTestFiles: false,
-            usePageObjects: false,
-        }
-
-        await generateTestFiles(answers as any)
-
-        expect(readDir).toBeCalledTimes(1)
-        expect(ejs.renderFile).toBeCalledTimes(0)
+    it('should throw capability not provided', async () => {
+        await expect(() => getCapabilities({ option: '/path/to/config.js' } as any))
+            .rejects.toThrowErrorMatchingSnapshot()
     })
 
-    it('Cucumber without page objects', async () => {
-        readDir.mockReturnValue(Promise.resolve([
-            '/foo/bar/loo/step_definition/example.step.js',
-            '/foo/bar/example.feature'
-        ]))
-        const answers = {
-            specs: './tests/e2e/*.js',
-            framework: 'cucumber',
-            stepDefinitions: '/some/step/defs',
-            usePageObjects: false,
-            generateTestFiles: true
-        }
-        await generateTestFiles(answers as any)
-
-        expect(readDir).toBeCalledTimes(1)
-        expect(readDir.mock.calls[0][0]).toContain('cucumber')
-        expect(ejs.renderFile).toBeCalledTimes(2)
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/loo/step_definition/example.step.js',
-            answers,
-            expect.any(Function)
-        )
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/example.feature',
-            answers,
-            expect.any(Function)
-        )
-        expect(fs.ensureDirSync).toBeCalledTimes(2)
+    it('should through capability not found', async () => {
+        const cap = { browserName: 'chrome' }
+        const getCapabilitiesMock = vi.spyOn(ConfigParser.prototype, 'getCapabilities')
+        getCapabilitiesMock.mockReturnValue([cap, cap, cap, cap, cap])
+        await expect(() => getCapabilities({ option: '/path/to/config.js', capabilities: 5 } as any))
+            .rejects.toThrowErrorMatchingSnapshot()
     })
 
-    it('Cucumber with page objects and TypeScript', async () => {
-        readDir.mockReturnValue(Promise.resolve([
-            '/foo/bar/loo/page.js.ejs',
-            '/foo/bar/loo/step_definition/example.step.js',
-            '/foo/bar/example.feature'
-        ]))
-        const answers = {
-            framework: 'cucumber',
-            usePageObjects: true,
-            isUsingTypeScript: true,
-            stepDefinitions: '/some/step',
-            destPageObjectRootPath: '/some/page/objects',
-            relativePath : '../page/object'
-        }
-        await generateTestFiles(answers as any)
-
-        expect(readDir).toBeCalledTimes(2)
-        expect(readDir.mock.calls[0][0]).toContain('cucumber')
-        expect(ejs.renderFile).toBeCalledTimes(6)
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/loo/step_definition/example.step.js',
-            answers,
-            expect.any(Function)
-        )
-        expect(ejs.renderFile).toBeCalledWith(
-            '/foo/bar/example.feature',
-            answers,
-            expect.any(Function)
-        )
-        expect(fs.ensureDirSync).toBeCalledTimes(6)
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[0][0].endsWith('/some/page/objects/page.ts'))
-            .toBe(true)
-        expect((fs.promises.writeFile as jest.Mock).mock.calls[2][0].endsWith('/example.feature'))
-            .toBe(true)
-    })
-})
-
-describe('getPathForFileGeneration', () => {
-    it('Cucumber with pageobjects default values', () => {
-        const generatedPaths = getPathForFileGeneration({
-            stepDefinitions: './features/step-definitions/steps.js',
-            pages: './features/pageobjects/**/*.js',
-            generateTestFiles: true,
-            usePageObjects: true,
-            framework: '@wdio/cucumber-service$--$cucumber'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('../pageobjects')
+    it('should get capability from wdio.conf.js', async () => {
+        const autoCompileMock = vi.spyOn(ConfigParser.prototype, 'initialize')
+        const getCapabilitiesMock = vi.spyOn(ConfigParser.prototype, 'getCapabilities')
+        getCapabilitiesMock.mockReturnValue([
+            { browserName: 'chrome' },
+            {
+                browserName: 'firefox',
+                specs: ['/path/to/some/specs.js']
+            },
+            {
+                maxInstances: 5,
+                browserName: 'chrome',
+                'goog:chromeOptions': { 'args': ['window-size=8000,1200'] }
+            }
+        ] as WebdriverIO.Capabilities)
+        expect(await getCapabilities({ option: '/path/to/config.js', capabilities: 2 } as any))
+            .toMatchSnapshot()
+        expect(autoCompileMock).toBeCalledTimes(1)
     })
 
-    it('Cucumber with pageobjects default different path', () => {
-        const generatedPaths = getPathForFileGeneration({
-            stepDefinitions: './features/step-definitions/steps.js',
-            pages: './features/page/objects/**/*.js',
-            generateTestFiles: true,
-            usePageObjects: true,
-            framework: '@wdio/cucumber-service$--$cucumber'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('../page/objects')
-    })
+    it('should return driver with capabilities for multiremote config', async () => {
+        const getCapabilitiesMock = vi.spyOn(ConfigParser.prototype, 'getCapabilities')
+        getCapabilitiesMock.mockReturnValue({
+            myChromeBrowser: {
+                capabilities: {
+                    browserName: 'chrome'
+                }
+            },
+            myFirefoxBrowser: {
+                capabilities: {
+                    browserName: 'firefox'
+                }
+            }
+        } as WebdriverIO.Capabilities)
 
-    it('Mocha with pageobjects default values', () => {
-        const generatedPaths = getPathForFileGeneration({
-            specs: './test/specs/**/*.js',
-            pages: './test/pageobjects/**/*.js',
-            generateTestFiles: true,
-            usePageObjects: true,
-            framework: '@wdio/cucumber-service$--$mocha'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('../pageobjects')
+        expect(await getCapabilities({ option: '/path/to/config.js', capabilities: 'myChromeBrowser' } as any))
+            .toMatchSnapshot()
     })
-
-    it('Mocha with pageobjects different path', () => {
-        const generatedPaths = getPathForFileGeneration({
-            specs: './test/specs/files/**/*.js',
-            pages: './test/pageobjects/**/*.js',
-            generateTestFiles: true,
-            usePageObjects: true,
-            framework: '@wdio/cucumber-service$--$mocha'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('../../pageobjects')
-    })
-
-    it('Do not auto generate file', () => {
-        const generatedPaths = getPathForFileGeneration({
-            specs: './test/specs/files/**/*.js',
-            pages: './test/pageobjects/**/*.js',
-            generateTestFiles: false,
-            usePageObjects: true,
-            framework: '@wdio/cucumber-service$--$mocha'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('')
-    })
-
-    it('Do not use PageObjects', () => {
-        const generatedPaths = getPathForFileGeneration({
-            specs: './test/specs/files/**/*.js',
-            pages: './test/pageobjects/**/*.js',
-            generateTestFiles: true,
-            usePageObjects: false,
-            framework: '@wdio/cucumber-service$--$mocha'
-        } as any)
-        expect(generatedPaths.relativePath).toEqual('')
-    })
-})
-
-test('getDefaultFiles', () => {
-    const files = '/foo/bar'
-    expect(getDefaultFiles({ isUsingCompiler: COMPILER_OPTION_ANSWERS[0] }, files))
-        .toBe('/foo/bar.js')
-    expect(getDefaultFiles({ isUsingCompiler: COMPILER_OPTION_ANSWERS[1] }, files))
-        .toBe('/foo/bar.ts')
-    expect(getDefaultFiles({ isUsingCompiler: COMPILER_OPTION_ANSWERS[2] }, files))
-        .toBe('/foo/bar.js')
 })
 
 afterEach(() => {
-    (console.log as jest.Mock).mockRestore()
-    readDir.mockClear()
-    ;(fs.promises.writeFile as jest.Mock).mockClear()
-    ;(fs.ensureDirSync as jest.Mock).mockClear()
-    ;(ejs.renderFile as jest.Mock).mockClear()
+    vi.mocked(console.log).mockRestore()
+    vi.mocked(readDir).mockClear()
+    vi.mocked(fs.writeFile).mockClear()
+    vi.mocked(cp.spawn).mockClear()
+    vi.mocked(fs.mkdir).mockClear()
 })

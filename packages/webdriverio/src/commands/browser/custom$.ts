@@ -1,46 +1,49 @@
-import type { ElementReference } from '@wdio/protocols'
+import { ELEMENT_KEY } from 'webdriver'
 
-import { getElement } from '../../utils/getElementObject'
-import { ELEMENT_KEY } from '../../constants'
+import { getElement } from '../../utils/getElementObject.js'
+import type { CustomStrategyFunction } from '../../types.js'
 
 /**
  *
- * The `custom$` allows you to use a custom strategy declared by using `browser.addLocatorStrategy`
+ * The `custom$` allows you to use a custom strategy declared by using `browser.addLocatorStrategy`.
+ * Read more on custom selector stratgies in the [Selector docs](../../selectors#custom-selector-strategies).
  *
  * <example>
     :example.js
-    it('should fetch the project title', () => {
-        browser.url('https://webdriver.io')
+    it('should fetch the project title', async () => {
+        await browser.url('https://webdriver.io')
         browser.addLocatorStrategy('myStrat', (selector) => {
             return document.querySelectorAll(selector)
         })
 
-        const projectTitle = browser.custom$('myStrat', '.projectTitle')
+        const projectTitle = await browser.custom$('myStrat', '.projectTitle')
 
-        console.log(projectTitle.getText()) // WEBDRIVER I/O
+        console.log(await projectTitle.getText()) // WEBDRIVER I/O
     })
  * </example>
  *
  * @alias custom$
- * @param {String} strategyName
- * @param {Any} strategyArguments
- * @return {Element}
+ * @param {string} strategyName
+ * @param {*} strategyArguments
+ * @example https://github.com/webdriverio/example-recipes/blob/f5730428ec3605e856e90bf58be17c9c9da891de/queryElements/customStrategy.js#L2-L11
+ * @example https://github.com/webdriverio/example-recipes/blob/f5730428ec3605e856e90bf58be17c9c9da891de/queryElements/example.html#L8-L12
+ * @example https://github.com/webdriverio/example-recipes/blob/f5730428ec3605e856e90bf58be17c9c9da891de/queryElements/customStrategy.js#L16-L19
+ * @return {WebdriverIO.Element}
  */
-export default async function custom$ (
+export async function custom$ (
     this: WebdriverIO.Browser,
     strategyName: string,
-    ...strategyArguments: any[]
-) {
-    const strategy = this.strategies.get(strategyName)
+    ...strategyArguments: unknown[]
+) : Promise<WebdriverIO.Element> {
+    const strategy = this.strategies.get(strategyName) as CustomStrategyFunction
 
     if (!strategy) {
         throw Error('No strategy found for ' + strategyName)
     }
 
-    let res: ElementReference | ElementReference[] = await this.execute(
-        strategy,
-        ...strategyArguments
-    )
+    const strategyRef = { strategy, strategyName, strategyArguments }
+
+    let res = await this.execute(strategy, ...strategyArguments)
 
     /**
      * if the user's script returns multiple elements
@@ -52,8 +55,8 @@ export default async function custom$ (
     }
 
     if (res && typeof res[ELEMENT_KEY] === 'string') {
-        return await getElement.call(this, strategy.toString(), res)
+        return await getElement.call(this, strategyRef, res)
     }
 
-    throw Error('Your locator strategy script must return an element')
+    return await getElement.call(this, strategyRef, new Error('no such element'))
 }

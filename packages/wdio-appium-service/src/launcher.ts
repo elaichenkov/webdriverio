@@ -1,34 +1,46 @@
-import logger from '@wdio/logger'
-import { ChildProcessByStdio, spawn } from 'child_process'
-import { createWriteStream, ensureFileSync } from 'fs-extra'
-import { promisify } from 'util'
-import { Readable } from 'stream'
-import { isCloudCapability } from '@wdio/config'
-import type { Services, Capabilities, Options } from '@wdio/types'
+import os from 'node:os'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import url from 'node:url'
+import path from 'node:path'
+import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { type Readable } from 'node:stream'
+import { promisify } from 'node:util'
 
-import { getFilePath, formatCliArgs } from './utils'
-import type { AppiumServerArguments, AppiumServiceConfig } from './types'
+import logger from '@wdio/logger'
+import getPort from 'get-port'
+import { resolve } from 'import-meta-resolve'
+import { isCloudCapability } from '@wdio/config'
+import { SevereServiceError } from 'webdriverio'
+import type { Services, Capabilities, Options } from '@wdio/types'
+import { isAppiumCapability } from '@wdio/utils'
+
+import { getFilePath, formatCliArgs } from './utils.js'
+import type { AppiumServerArguments, AppiumServiceConfig } from './types.js'
+import treeKill from 'tree-kill'
+import { aggregateSelectorPerformanceData } from './mobileSelectorPerformanceOptimizer/aggregator.js'
+import { determineReportDirectory } from './mobileSelectorPerformanceOptimizer/utils/index.js'
 
 const log = logger('@wdio/appium-service')
+const DEFAULT_APPIUM_PORT = 4723
 const DEFAULT_LOG_FILENAME = 'wdio-appium.log'
-
 const DEFAULT_CONNECTION = {
     protocol: 'http',
-    hostname: 'localhost',
-    port: 4723,
+    hostname: '127.0.0.1',
     path: '/'
 }
+const APPIUM_START_TIMEOUT = 30 * 1000
 
 export default class AppiumLauncher implements Services.ServiceInstance {
     private readonly _logPath?: string
     private readonly _appiumCliArgs: string[] = []
     private readonly _args: AppiumServerArguments
-    private _command: string
     private _process?: ChildProcessByStdio<null, Readable, Readable>
+    private _isShuttingDown: boolean = false
 
     constructor(
         private _options: AppiumServiceConfig,
-        private _capabilities: Capabilities.RemoteCapabilities,
+        private _capabilities: Capabilities.TestrunnerCapabilities,
         private _config?: Options.Testrunner
     ) {
         this._args = {
@@ -36,23 +48,22 @@ export default class AppiumLauncher implements Services.ServiceInstance {
             ...(this._options.args || {})
         }
         this._logPath = _options.logPath || this._config?.outputDir
-        this._command = this._getCommand(_options.command)
     }
 
-    private _getCommand(command?: string) {
+    private async _getCommand(command?: string) {
         /**
          * Explicitly set node as command and appium
          * module path as it's first argument if it's not defined
          */
         if (!command) {
             command = 'node'
-            this._appiumCliArgs.push(AppiumLauncher._getAppiumCommand())
+            this._appiumCliArgs.unshift(await AppiumLauncher._getAppiumCommand())
         }
 
         /**
          * Windows needs to be started through `cmd` and the command needs to be an arg
          */
-        if (process.platform === 'win32') {
+        if (os.platform() === 'win32') {
             this._appiumCliArgs.unshift('/c', command)
             command = 'cmd'
         }
@@ -64,7 +75,9 @@ export default class AppiumLauncher implements Services.ServiceInstance {
      * update capability connection options to connect
      * to Appium server
      */
-    private _setCapabilities() {
+    private _setCapabilities(port: number) {
+        let capabilityWasUpdated = false
+
         /**
          * Multiremote sessions
          */
@@ -72,105 +85,308 @@ export default class AppiumLauncher implements Services.ServiceInstance {
             for (const [, capability] of Object.entries(this._capabilities)) {
                 const cap = (capability.capabilities as Capabilities.W3CCapabilities) || capability
                 const c = (cap as Capabilities.W3CCapabilities).alwaysMatch || cap
-                !isCloudCapability(c) && Object.assign(
-                    capability,
-                    DEFAULT_CONNECTION,
-                    'port' in this._args ? { port: this._args.port } : {},
-                    { path: this._args.basePath },
-                    { ...capability }
-                )
+                if (!isCloudCapability(c) && isAppiumCapability(c)) {
+                    capabilityWasUpdated = true
+                    Object.assign(
+                        capability,
+                        DEFAULT_CONNECTION,
+                        { path: this._args.basePath, port },
+                        { ...capability }
+                    )
+                }
             }
-            return
+            return capabilityWasUpdated
         }
 
-        this._capabilities.forEach(
-            (cap) => !isCloudCapability((cap as Capabilities.W3CCapabilities).alwaysMatch || cap) && Object.assign(
-                cap,
-                DEFAULT_CONNECTION,
-                'port' in this._args ? { port: this._args.port } : {},
-                { path: this._args.basePath },
-                { ...cap }
-            ))
+        this._capabilities.forEach((cap) => {
+            const w3cCap = cap as Capabilities.W3CCapabilities
+
+            /**
+             * Parallel Multiremote
+             */
+            if (Object.values(cap).length > 0 && Object.values(cap).every(c => typeof c === 'object' && c.capabilities)) {
+                Object.values(cap).forEach(c => {
+                    const capability = (c.capabilities as Capabilities.W3CCapabilities).alwaysMatch || (c.capabilities as Capabilities.W3CCapabilities) || c
+                    if (!isCloudCapability(capability) && isAppiumCapability(capability)) {
+                        capabilityWasUpdated = true
+                        Object.assign(
+                            c,
+                            DEFAULT_CONNECTION,
+                            { path: this._args.basePath, port },
+                            { ...c }
+                        )
+                    }
+                }
+                )
+            } else if (!isCloudCapability(w3cCap.alwaysMatch || cap) && isAppiumCapability(w3cCap.alwaysMatch || cap)) {
+                capabilityWasUpdated = true
+                Object.assign(
+                    cap,
+                    DEFAULT_CONNECTION,
+                    { path: this._args.basePath, port },
+                    { ...cap }
+                )
+            }
+        })
+
+        return capabilityWasUpdated
     }
 
     async onPrepare() {
         /**
-         * Append remaining arguments
+         * Throws an error if `this._options.args` is defined and is an array.
+         * @throws {Error} If `this._options.args` is an array.
          */
-        this._appiumCliArgs.push(...formatCliArgs(this._args))
+        if (Array.isArray(this._options.args)) {
+            throw new Error('Args should be an object')
+        }
 
-        this._setCapabilities()
+        /**
+         * Use port from service option or get a random port
+         */
+        this._args.port = typeof this._args.port === 'number' ? this._args.port
+            : await getPort({ port: DEFAULT_APPIUM_PORT })
+
+        /**
+         * only actually start Appium server if we detect a capability that
+         * would indicate a that a local Appium session is needed
+         */
+        const capabilityWasUpdated = this._setCapabilities(this._args.port)
+        if (!capabilityWasUpdated) {
+            log.warn('Could not identify any capability that indicates a local Appium session, skipping Appium launch')
+            return
+        }
+
+        /**
+         * Append cli arguments
+         */
+        this._appiumCliArgs.push(...formatCliArgs({ ...this._args }))
 
         /**
          * start Appium
          */
-        this._process = await promisify(this._startAppium)(this._command, this._appiumCliArgs)
+        const command = await this._getCommand(this._options.command)
+
+        const timeout = this._options.appiumStartTimeout ?? APPIUM_START_TIMEOUT
+        this._process = await this._startAppium(command, this._appiumCliArgs, timeout)
 
         if (this._logPath) {
             this._redirectLogStream(this._logPath)
+        } else {
+            log.info('Appium logs written to stdout')
+            this._process.stdout.on('data', this.#logStdout)
+            this._process.stderr.on('data', this.#logStderr)
         }
     }
 
-    onComplete() {
-        if (this._process) {
-            log.debug(`Appium (pid: ${this._process.pid}) killed`)
-            this._process.kill()
-        }
+    #logStdout = (data: Buffer) => {
+        log.debug(data.toString())
     }
 
-    private _startAppium(command: string, args: Array<string>, callback: (err: any, result: any) => void): void {
-        log.debug(`Will spawn Appium process: ${command} ${args.join(' ')}`)
-        let process: ChildProcessByStdio<null, Readable, Readable> = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-        let error: Error | undefined
+    #logStderr = (data: Buffer) => {
+        log.warn(data.toString())
+    }
 
-        process.stdout.on('data', (data) => {
-            if (data.includes('Appium REST http interface listener started')) {
-                log.debug(`Appium started with ID: ${process.pid}`)
-                callback(null, process)
+    private promisifiedTreeKill = promisify<number, string>(treeKill)
+    async onComplete(exitCode: number, config: Options.Testrunner, capabilities: Capabilities.TestrunnerCapabilities) {
+        this._isShuttingDown = true
+
+        const trackConfig = this._options.trackSelectorPerformance
+        if (trackConfig && typeof trackConfig === 'object' && !Array.isArray(trackConfig)) {
+            try {
+                const reportDirectory = determineReportDirectory(
+                    trackConfig.reportPath,
+                    this._config,
+                    this._options
+                )
+                const maxLineLength = trackConfig.maxLineLength || 100
+                const enableCliReport = trackConfig.enableCliReport === true
+                const enableMarkdownReport = trackConfig.enableMarkdownReport === true
+                await aggregateSelectorPerformanceData(
+                    capabilities,
+                    maxLineLength,
+                    undefined,
+                    reportDirectory,
+                    { enableCliReport, enableMarkdownReport }
+                )
+            } catch (err) {
+                log.error('Failed to aggregate selector performance data:', err)
             }
-        })
+        }
 
         /**
-         * only capture first error to print it in case Appium failed to start.
+         * Kill appium and all process' spawned from it
          */
-        process.stderr.once('data', err => { error = err })
-
-        process.once('exit', exitCode => {
-            let errorMessage = `Appium exited before timeout (exit code: ${exitCode})`
-            if (exitCode == 2) {
-                errorMessage += '\n' + (error || 'Check that you don\'t already have a running Appium service.')
-                log.error(errorMessage)
+        if (this._process && this._process.pid) {
+            /**
+             * remove stdio event listener
+             */
+            this._process.stdout.off('data', this.#logStdout)
+            this._process.stderr.off('data', this.#logStderr)
+            /**
+             * Ensure all child processes are also killed
+            */
+            log.info('Killing entire Appium tree')
+            try {
+                // First attempt with SIGTERM
+                await this.promisifiedTreeKill(this._process.pid, 'SIGTERM')
+                    .catch(async (err) => {
+                        log.warn('SIGTERM failed, attempting SIGKILL:', err)
+                        // If SIGTERM fails, try SIGKILL
+                        await this.promisifiedTreeKill(this._process!.pid!, 'SIGKILL')
+                    })
+                log.info('Process and its children successfully terminated')
+            } catch (err) {
+                log.error('Failed to kill Appium process tree:', err)
+                try {
+                    this._process.kill('SIGKILL')
+                    log.info('Killed main process directly')
+                } catch (e) {
+                    log.error('Failed to kill process directly:', e)
+                }
             }
-            callback(new Error(errorMessage), null)
+        }
+    }
+    private _startAppium(command: string, args: Array<string>, timeout = APPIUM_START_TIMEOUT) {
+        log.info(`Will spawn Appium process: ${command} ${args.join(' ')}`)
+        /**
+         * We need to pass a clean NODE_OPTIONS to prevent the child process from inheriting
+         * the tsx loader from the parent process (when running with TypeScript config).
+         */
+        const appiumEnv = { ...process.env, NODE_OPTIONS: '' }
+        const appiumProcess: ChildProcessByStdio<null, Readable, Readable> = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: appiumEnv })
+        // just for validate the first error
+        let errorCaptured = false
+        // to set a timeout for the promise
+        let timeoutId: NodeJS.Timeout
+        // to store the first error message
+        let error: string
+
+        return new Promise<ChildProcessByStdio<null, Readable, Readable>>((resolve, reject) => {
+            let outputBuffer = ''
+
+            /**
+             * set timeout for promise. If Appium does not start within given timeout,
+             * e.g. if the port is already in use, reject the promise.
+             */
+            timeoutId = setTimeout(() => {
+                rejectOnce(new Error('Timeout: Appium did not start within expected time'))
+            }, timeout)
+
+            /**
+             * reject promise if Appium does not start within given timeout,
+             * e.g. if the port is already in use
+             *
+             * @param err - error to reject with
+             */
+            const rejectOnce = (err: Error) => {
+                if (!errorCaptured) {
+                    errorCaptured = true
+                    clearTimeout(timeoutId)
+                    reject(err)
+                }
+            }
+
+            /**
+             * only capture first error to print it in case Appium failed to start.
+             */
+            const onErrorMessage = (data: Buffer) => {
+                const message = data.toString()
+
+                const isDebuggerMessage = message.includes('Debugger attached') ||
+                    message.includes('Debugger listening on') ||
+                    message.includes('For help, see: https://nodejs.org/en/docs/inspector')
+
+                if (isDebuggerMessage) {
+                    return
+                }
+
+                appiumProcess.stderr.off('data', onErrorMessage)
+
+                error = message || 'Appium exited without unknown error message'
+
+                /**
+                 * Check if the message is a warning (not an actual error)
+                 * Warnings should be logged but not cause the service to fail
+                 */
+                const isWarning = message.trim().startsWith('WARN')
+
+                if (isWarning) {
+                    log.warn(error)
+                } else {
+                    log.error(error)
+                }
+
+                /**
+                 * Don't reject on warnings - this is the fix for issue #14770
+                 * Continue to reject on all other stderr output for backward compatibility
+                 */
+                if (!isWarning) {
+                    rejectOnce(new Error(error))
+                }
+            }
+
+            const onStdout = (data: Buffer) => {
+                outputBuffer += data.toString()
+                if (outputBuffer.includes('Appium REST http interface listener started')) {
+                    outputBuffer = ''
+                    log.info(`Appium started with ID: ${appiumProcess.pid}`)
+                    clearTimeout(timeoutId)
+
+                    appiumProcess.stdout.off('data', onStdout)
+                    appiumProcess.stderr.off('data', onErrorMessage)
+                    resolve(appiumProcess)
+                }
+            }
+
+            appiumProcess.stdout.on('data', onStdout)
+            appiumProcess.stderr.on('data', onErrorMessage)
+            appiumProcess.once('exit', (exitCode: number) => {
+                if (this._isShuttingDown) {
+                    return
+                }
+                let errorMessage = `Appium exited before timeout (exit code: ${exitCode})`
+                if (exitCode === 2) {
+                    errorMessage += '\n' + (error?.toString() || 'Check that you don\'t already have a running Appium service.')
+                } else if (errorCaptured) {
+                    errorMessage += `\n${error?.toString()}`
+                }
+                if (exitCode !== 0) {
+                    log.error(errorMessage)
+                }
+                rejectOnce(new Error(errorMessage))
+            })
         })
     }
 
-    private _redirectLogStream(logPath: string) {
-        if (!this._process){
+    private async _redirectLogStream(logPath: string) {
+        if (!this._process) {
             throw Error('No Appium process to redirect log stream')
         }
         const logFile = getFilePath(logPath, DEFAULT_LOG_FILENAME)
 
         // ensure file & directory exists
-        ensureFileSync(logFile)
+        await fsp.mkdir(path.dirname(logFile), { recursive: true })
 
         log.debug(`Appium logs written to: ${logFile}`)
-        const logStream = createWriteStream(logFile, { flags: 'w' })
+        const logStream = fs.createWriteStream(logFile, { flags: 'w' })
         this._process.stdout.pipe(logStream)
         this._process.stderr.pipe(logStream)
     }
 
-    private static _getAppiumCommand (moduleName = 'appium') {
+    private static async _getAppiumCommand(command = 'appium') {
         try {
-            return require.resolve(moduleName)
+            const entryPath = await resolve(command, import.meta.url)
+            return url.fileURLToPath(entryPath)
         } catch (err) {
-            log.error(
-                'Appium is not installed locally.\n' +
-                'If you use globally installed appium please add\n' +
-                "appium: { command: 'appium' }\n" +
-                'to your wdio.conf.js!'
+            const errorMessage = (
+                'Appium is not installed locally. Please install via e.g. `npm i --save-dev appium`.\n' +
+                'If you use globally installed appium please add: `appium: { command: \'appium\' }`\n' +
+                'to your wdio.conf.js!\n\n' +
+                (err as Error).stack
             )
-            throw err
+            log.error(errorMessage)
+            throw new SevereServiceError(errorMessage)
         }
     }
 }

@@ -1,23 +1,30 @@
+import path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+import { Status } from '@cucumber/cucumber'
 import {
     createStepArgument,
     formatMessage,
     getStepType,
     getFeatureId,
     buildStepPayload,
-    setUserHookNames,
-    filterPickles,
     getTestStepTitle,
     addKeywordToStep,
-} from '../src/utils'
+    getRule,
+    generateSkipTagsFromCapabilities,
+    convertStatus
+} from '../src/utils.js'
+import { featureWithRules } from './fixtures/features.js'
+
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('utils', () => {
     describe('createStepArgument', () => {
         it('Works without argument', () => {
-            expect(typeof createStepArgument({})).toBe('undefined')
+            expect(typeof createStepArgument({} as any)).toBe('undefined')
         })
 
         it('Works with unexpected type', () => {
-            expect(typeof createStepArgument({ argument: { } }))
+            expect(typeof createStepArgument({ argument: { } } as any))
                 .toBe('undefined')
         })
 
@@ -32,7 +39,7 @@ describe('utils', () => {
                         ]
                     }
                 }
-            })).toMatchSnapshot()
+            } as any)).toMatchSnapshot()
         })
 
         it('Works with DocString', () => {
@@ -42,7 +49,7 @@ describe('utils', () => {
                         content: 'some string content'
                     }
                 }
-            })).toEqual('some string content')
+            } as any)).toEqual('some string content')
         })
     })
 
@@ -79,8 +86,8 @@ describe('utils', () => {
     })
 
     it('getStepType', () => {
-        expect(getStepType({})).toBe('test')
-        expect(getStepType({ hookId: '123' })).toBe('hook')
+        expect(getStepType({} as any)).toBe('test')
+        expect(getStepType({ hookId: '123' } as any)).toBe('hook')
     })
 
     it('getFeatureId', () => {
@@ -89,73 +96,25 @@ describe('utils', () => {
                 line: 1,
                 column: 2
             }
-        })).toBe('bar.feature:1:2')
+        } as any)).toBe('bar.feature:1:2')
     })
 
     it('buildStepPayload', () => {
         expect(buildStepPayload('uri', {
             name: 'some feature'
-        }, {
+        } as any, {
             id: '321',
             tags: [{ name: 'some tag' }]
-        }, {
+        } as any, {
             id: '123',
             text: 'title',
             keyword: 'Given'
-        }, { type: 'step' })).toMatchSnapshot()
+        } as any, {
+            type: 'step'
+        })).toMatchSnapshot()
     })
 
-    it('setUserHookNames', () => {
-        const options = {
-            beforeTestRunHookDefinitionConfigs: [{ code: function wdioHookFoo () { } }, { code: async function someHookFoo () { } }, { code: () => { } }],
-            beforeTestCaseHookDefinitionConfigs: [{ code: function wdioHookFoo () { } }, { code: function someHookFoo () { } }, { code: async () => { } }],
-            afterTestCaseHookDefinitionConfigs: [{ code: function wdioHookFoo () { } }, { code: function someHookFoo () { } }, { code: async () => { } }],
-            afterTestRunHookDefinitionConfigs: [{ code: function wdioHookFoo () { } }, { code: async function someHookFoo () { } }, { code: () => { } }],
-        }
-        setUserHookNames(options as any)
-        const hookTypes = Object.values(options)
-        expect(hookTypes).toHaveLength(4)
-        hookTypes.forEach(hookType => {
-            expect(hookType).toHaveLength(3)
-
-            const wdioHooks = hookType.filter(hookDefinition => hookDefinition.code.name.startsWith('wdioHook'))
-            const userHooks = hookType.filter(hookDefinition => hookDefinition.code.name === 'userHookFn')
-            const userAsyncHooks = hookType.filter(hookDefinition => hookDefinition.code.name === 'userHookAsyncFn')
-            expect(wdioHooks).toHaveLength(1)
-            expect(userHooks).toHaveLength(1)
-            expect(userAsyncHooks).toHaveLength(1)
-        })
-    })
-
-    it('filterPickles', () => {
-        expect(filterPickles({
-            browserName: 'chrome'
-        }, {
-            id: '123',
-            tags: [{ name: '@skip(browserName="chrome")' }]
-        })).toBe(false)
-        expect(filterPickles({
-            browserName: 'chrome'
-        }, {
-            id: '123',
-            tags: [{ name: '@skip(browserName="foobar")' }]
-        })).toBe(true)
-        expect(filterPickles({
-            browserName: 'chrome',
-            platformName: 'windows'
-        }, {
-            id: '123',
-            tags: [{ name: '@skip(browserName="foobar";platformName="windows")' }]
-        })).toBe(true)
-        expect(filterPickles({
-            browserName: 'chrome'
-        }, {
-            id: '123',
-            tags: [{ name: '@skip(something=weird)' }]
-        })).toBe(false)
-    })
-
-    it('addKeywordToStep should add keywords to the steps', ()=>{
+    it('addKeywordToStep should add keywords to the steps', () => {
         const steps = [
             // Should get a keyword
             {
@@ -205,9 +164,91 @@ describe('utils', () => {
                         id: '3'
                     }
                 },
+                {
+                    rule: {
+                        keyword: 'Rule',
+                        name: 'Rule',
+                        children: [
+                            {
+                                scenario: {
+                                    keyword: 'Scenario Outline',
+                                    name: 'rule outline',
+                                    steps: [
+                                        {
+                                            keyword: 'Given ',
+                                            text: 'I am on the login page',
+                                            id: '4'
+                                        }
+                                    ],
+                                    id: '5'
+                                }
+                            }
+                        ],
+                        id: '6'
+                    }
+                }
             ]
         }
 
-        expect(addKeywordToStep(steps, feature)).toMatchSnapshot()
+        expect(addKeywordToStep(steps as any, feature as any)).toMatchSnapshot()
+    })
+
+    it('getRule should get the rule for an specific scenario id', () => {
+        const feature = featureWithRules
+
+        expect(getRule(feature as any, '1')).toBe(undefined)
+        expect(getRule(feature as any, '2')).toBe('Rule for scenario 2')
+        expect(getRule(feature as any, '3')).toBe('Rule for scenario 3 and 4')
+        expect(getRule(feature as any, '4')).toBe('Rule for scenario 3 and 4')
+    })
+
+    it('generateSkipTagsFromCapabilities', () => {
+        expect(generateSkipTagsFromCapabilities({
+            browserName: 'chrome',
+        }, [['@skip(browserName="chrome")']]))
+            .toStrictEqual(['(not @skip\\(browserName="chrome"\\))'])
+
+        expect(generateSkipTagsFromCapabilities({
+            browserName: 'chrome',
+        }, [['@skip\\(browserName="foobar"\\)']]))
+            .toStrictEqual([])
+    })
+
+    expect(generateSkipTagsFromCapabilities({
+        browserName: 'chrome',
+        platformName: 'windows'
+    }, [['@skip\\(browserName="foobar";platformName="windows"\\)']]))
+        .toStrictEqual([])
+
+    expect(generateSkipTagsFromCapabilities({
+        browserName: 'chrome',
+    }, [['@skip\\(something="weird"\\)']]))
+        .toStrictEqual([])
+
+    expect(generateSkipTagsFromCapabilities({
+        browserName: 'chrome',
+    }, [['@skip()']]))
+        .toStrictEqual(['(not @skip\\(\\))'])
+
+    expect(generateSkipTagsFromCapabilities({
+        browserName: 'chrome',
+    }, [['@skip']]))
+        .toStrictEqual(['(not @skip)'])
+
+    expect(generateSkipTagsFromCapabilities({
+        browserName: 'chrome',
+    }, [['@skip_local']]))
+        .toStrictEqual([])
+
+    describe('convertStatus', () => {
+        it('maps Cucumber statuses to TestStatus', () => {
+            expect(convertStatus(Status.PASSED)).toBe('pass')
+            expect(convertStatus(Status.PENDING)).toBe('pending')
+            expect(convertStatus(Status.SKIPPED)).toBe('skip')
+            expect(convertStatus(Status.AMBIGUOUS)).toBe('skip')
+            expect(convertStatus(Status.FAILED)).toBe('fail')
+            expect(convertStatus(Status.UNDEFINED)).toBe('pass')
+            expect(convertStatus(Status.UNKNOWN)).toBe('fail')
+        })
     })
 })

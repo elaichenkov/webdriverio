@@ -1,11 +1,13 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, vi, beforeEach, afterEach } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('setValue', () => {
-    let browser: WebdriverIO.BrowserObject
+    let browser: WebdriverIO.Browser
 
     beforeEach(async () => {
         browser = await remote({
@@ -17,17 +19,19 @@ describe('setValue', () => {
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 
-    test('should set the value clearing the element first', async () => {
+    it('should set the value clearing the element first', async () => {
         const elem = await browser.$('#foo')
 
         await elem.setValue('foobar')
-        expect(got.mock.calls[2][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/clear')
-        expect(got.mock.calls[3][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[3][0]!.pathname)
             .toBe('/session/foobar-123/element/some-elem-123/value')
-        expect(got.mock.calls[3][1].json.text).toEqual('foobar')
+        expect(JSON.parse(vi.mocked(fetch).mock.calls[3][1]!.body as any).text).toEqual('foobar')
     })
 })

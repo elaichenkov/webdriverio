@@ -1,14 +1,28 @@
-import { isFunctionAsync } from '../utils'
-import { logHookError } from './errorHandler'
-import { executeHooksWithArgs, executeAsync, runSync } from '../shim'
+import { logHookError } from './errorHandler.js'
+import { executeHooksWithArgs, executeAsync } from '../shim.js'
 
 import type {
     WrapperMethods,
     SpecFunction,
     BeforeHookParam,
-    AfterHookParam,
-    JasmineContext
-} from './types'
+    AfterHookParam
+} from './types.js'
+
+declare global {
+    // Firstly variable '_wdioDynamicJasmineResultErrorList' gets reference to test result in packages/wdio-jasmine-framework/src/index.ts and then used here in wdio-utils/ as workaround for Jasmine
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    var _wdioDynamicJasmineResultErrorList: any | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    var _jasmineTestResult: any | undefined
+}
+
+const STACKTRACE_FILTER = [
+    'node_modules/webdriver/',
+    'node_modules/webdriverio/',
+    'node_modules/@wdio/',
+    '(internal/process/task',
+    '(node:internal/process/task'
+]
 
 /**
  * wraps test framework spec/hook function with WebdriverIO before/after hooks
@@ -19,6 +33,8 @@ import type {
  * @param   {object} after          afterFn and afterFnArgs
  * @param   {string} cid            cid
  * @param   {number} repeatTest     number of retries if test fails
+ * @param   {string} hookName       the hook name
+ * @param   {number} timeout        the maximum time (in milliseconds) to wait for
  * @return  {*}                     specFn result
  */
 export const testFnWrapper = function (
@@ -29,10 +45,12 @@ export const testFnWrapper = function (
         BeforeHookParam<unknown>,
         AfterHookParam<unknown>,
         string,
-        number
+        number,
+        string?,
+        number?
     ]
 ) {
-    return testFrameworkFnWrapper.call(this, { executeHooksWithArgs, executeAsync, runSync }, ...args)
+    return testFrameworkFnWrapper.call(this, { executeHooksWithArgs, executeAsync }, ...args)
 }
 
 /**
@@ -45,64 +63,98 @@ export const testFnWrapper = function (
  * @param   {object} after          afterFn and afterFnArgs function
  * @param   {string} cid            cid
  * @param   {number} repeatTest     number of retries if test fails
+ * @param   {string} hookName       the hook name
+ * @param   {number} timeout        the maximum time (in milliseconds) to wait for
  * @return  {*}                     specFn result
  */
 export const testFrameworkFnWrapper = async function (
     this: unknown,
-    { executeHooksWithArgs, executeAsync, runSync }: WrapperMethods,
+    { executeHooksWithArgs, executeAsync }: WrapperMethods,
     type: string,
     { specFn, specFnArgs }: SpecFunction,
     { beforeFn, beforeFnArgs }: BeforeHookParam<unknown>,
     { afterFn, afterFnArgs }: AfterHookParam<unknown>,
     cid: string,
-    repeatTest = 0
+    repeatTest = 0,
+    hookName?: string,
+    timeout?: number
 ) {
     const retries = { attempts: 0, limit: repeatTest }
     const beforeArgs = beforeFnArgs(this)
+    if (type === 'Hook' && hookName) {
+        beforeArgs.push(hookName)
+    }
     await logHookError(`Before${type}`, await executeHooksWithArgs(`before${type}`, beforeFn, beforeArgs), cid)
 
-    let promise
     let result
     let error
-    /**
-     * user wants handle async command using promises, no need to wrap in fiber context
-     */
-    if (isFunctionAsync(specFn) || !runSync) {
-        promise = executeAsync.call(this, specFn, retries, specFnArgs)
-    } else {
-        promise = new Promise(runSync.call(this, specFn, retries, specFnArgs))
-    }
+    let skip = false
+    let autoSkipError: unknown
 
     const testStart = Date.now()
     try {
-        result = await promise
-    } catch (err) {
-        error = err
+        result = await executeAsync.call(this, specFn, retries, specFnArgs, timeout)
+        if (globalThis._jasmineTestResult !== undefined) {
+            result = globalThis._jasmineTestResult
+            globalThis._jasmineTestResult = undefined
+        }
+
+        if (globalThis._wdioDynamicJasmineResultErrorList?.length > 0) {
+            globalThis._wdioDynamicJasmineResultErrorList[0].stack = filterStackTrace(globalThis._wdioDynamicJasmineResultErrorList[0].stack)
+            error = globalThis._wdioDynamicJasmineResultErrorList[0]
+            globalThis._wdioDynamicJasmineResultErrorList = undefined
+        }
+    } catch (_err: unknown) {
+        /**
+         * To address skipping tests for Mocha and Jasmine
+         */
+        if (!(JSON.stringify(_err, Object.getOwnPropertyNames(_err)).includes('sync skip; aborting execution') || JSON.stringify(_err, Object.getOwnPropertyNames(_err)).includes('marked Pending'))) {
+            const err = _err instanceof Error ? _err : new Error(typeof _err === 'string' ? _err : 'An unknown error occurred')
+            if (err.stack) {
+                err.stack = filterStackTrace(err.stack)
+            }
+
+            error = err
+        } else {
+            skip = true
+            autoSkipError = _err
+        }
     }
     const duration = Date.now() - testStart
-    let afterArgs = afterFnArgs(this)
-
-    /**
-     * ensure errors are caught in Jasmine tests too
-     * (in Jasmine failing assertions are not causing the test to throw as
-     * oppose to other common assertion libraries like chai)
-     */
-    if (!error && afterArgs[0] && (afterArgs as [JasmineContext, unknown])[0].failedExpectations && (afterArgs as [JasmineContext, unknown])[0].failedExpectations.length) {
-        error = (afterArgs as [JasmineContext, unknown])[0].failedExpectations[0]
-    }
-
+    const afterArgs = afterFnArgs(this)
     afterArgs.push({
         retries,
         error,
         result,
         duration,
-        passed: !error
+        passed: !error && !skip,
+        skipped: skip
     })
+
+    if (type === 'Hook' && hookName) {
+        afterArgs.push(hookName)
+    }
 
     await logHookError(`After${type}`, await executeHooksWithArgs(`after${type}`, afterFn, [...afterArgs]), cid)
 
-    if (error) {
+    if (error && !error.matcherName) {
         throw error
     }
+    if (skip && autoSkipError) {
+        throw autoSkipError
+    }
     return result
+}
+
+/**
+ * Filter out internal stacktraces. exporting to allow testing of the function
+ * @param   {string} stack Stacktrace
+ * @returns {string}
+ */
+export const filterStackTrace = (stack: string): string => {
+    return stack
+        .split('\n')
+        .filter(line => !STACKTRACE_FILTER.some(l => line.includes(l)))
+        .map(line => line.replace(/\?invalidateCache=(\d\.\d+|\d)/g, ''))
+        .join('\n')
 }

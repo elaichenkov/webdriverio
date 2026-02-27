@@ -1,47 +1,46 @@
-import { ElementReference } from '@wdio/protocols'
-import { enhanceElementsArray } from '../../utils'
-import { getElements } from '../../utils/getElementObject'
-import { ELEMENT_KEY } from '../../constants'
-import type { ElementArray } from '../../types'
+import { ELEMENT_KEY } from 'webdriver'
+
+import { enhanceElementsArray } from '../../utils/index.js'
+import { getElements } from '../../utils/getElementObject.js'
+import type { CustomStrategyFunction, CustomStrategyReference } from '../../types.js'
 
 /**
  *
- * The `customs$$` allows you to use a custom strategy declared by using `browser.addLocatorStrategy`
+ * The `customs$$` allows you to use a custom strategy declared by using `browser.addLocatorStrategy`.
+ * Read more on custom selector strategies in the [Selector docs](../../selectors#custom-selector-strategies).
  *
  * <example>
     :example.js
-    it('should get all the plugin wrapper buttons', () => {
-        browser.url('https://webdriver.io')
-        browser.addLocatorStrategy('myStrat', (selector) => {
+    it('should get all the plugin wrapper buttons', async () => {
+        await browser.url('https://webdriver.io')
+        await browser.addLocatorStrategy('myStrategy', (selector) => {
             return document.querySelectorAll(selector)
         })
 
-        const pluginWrapper = browser.custom$$('myStrat', '.pluginWrapper')
+        const pluginWrapper = await browser.custom$$('myStrategy', '.pluginWrapper')
 
-        console.log(pluginWrapper.length) // 4
+        console.log(await pluginWrapper.length) // 4
     })
  * </example>
  *
  * @alias custom$$
- * @param {String} strategyName
- * @param {Any} strategyArguments
- * @return {ElementArray}
+ * @param {string} strategyName
+ * @param {*} strategyArguments
+ * @return {WebdriverIO.ElementArray}
  */
-export default async function custom$$ (
+export async function custom$$ (
     this: WebdriverIO.Browser,
     strategyName: string,
-    ...strategyArguments: any[]
-): Promise<ElementArray> {
-    const strategy = this.strategies.get(strategyName)
+    ...strategyArguments: unknown[]
+): Promise<WebdriverIO.ElementArray> {
+    const strategy = this.strategies.get(strategyName) as CustomStrategyFunction
 
     if (!strategy) {
         throw Error('No strategy found for ' + strategyName)
     }
 
-    let res: ElementReference | ElementReference[] = await this.execute(
-        strategy,
-        ...strategyArguments
-    )
+    const strategyRef: CustomStrategyReference = { strategy, strategyName, strategyArguments }
+    let res = await this.execute(strategy, ...strategyArguments)
 
     /**
      * if the user's script return just one element
@@ -54,6 +53,6 @@ export default async function custom$$ (
 
     res = res.filter(el => !!el && typeof el[ELEMENT_KEY] === 'string')
 
-    const elements = res.length ? await getElements.call(this, strategy.toString(), res) : [] as any as ElementArray
-    return enhanceElementsArray(elements, this, strategyName, 'custom$$', [strategyArguments])
+    const elements = res.length ? await getElements.call(this, strategyRef, res) : [] as WebdriverIO.Element[]
+    return enhanceElementsArray(elements, this, strategyName, 'custom$$', strategyArguments)
 }

@@ -1,4 +1,7 @@
+import logger from '@wdio/logger'
 import type { Cookie } from '@wdio/protocols'
+
+const log = logger('webdriverio')
 
 /**
  *
@@ -8,11 +11,11 @@ import type { Cookie } from '@wdio/protocols'
  *
  * <example>
     :setCookies.js
-    it('should set a cookie for the page', () => {
-        browser.url('/')
+    it('should set a cookie for the page', async () => {
+        await browser.url('/')
 
         // set a single cookie
-        browser.setCookies({
+        await browser.setCookies({
             name: 'test1',
             value: 'one'
             // The below options are optional
@@ -24,12 +27,12 @@ import type { Cookie } from '@wdio/protocols'
         })
 
         // set multiple cookies
-        browser.setCookies([
+        await browser.setCookies([
             {name: 'test2', value: 'two'},
             {name: 'test3', value: 'three'}
         ])
 
-        const cookies = browser.getCookies()
+        const cookies = await browser.getCookies()
         console.log(cookies);
         // outputs:
         // [
@@ -41,7 +44,7 @@ import type { Cookie } from '@wdio/protocols'
  * </example>
  *
  * @alias browser.setCookies
- * @param {Array<WebDriver.Cookie>|WebDriver.Cookie} cookie   cookie object or object array.
+ * @param {`Array<WebDriverCookie>|WebDriverCookie`} cookie   cookie object or object array.
  * @param {String=}       cookie.name     The name of the cookie.
  * @param {String=}       cookie.value    The cookie value.
  * @param {String=}       cookie.path     The cookie path. Defaults to "/" if omitted when adding a cookie.
@@ -54,17 +57,59 @@ import type { Cookie } from '@wdio/protocols'
  * @type cookie
  *
  */
-export default async function setCookies(
+export async function setCookies(
     this: WebdriverIO.Browser,
     cookieObjs: Cookie | Cookie[]
-) {
+): Promise<void> {
     const cookieObjsList = !Array.isArray(cookieObjs) ? [cookieObjs] : cookieObjs
 
     if (cookieObjsList.some(obj => (typeof obj !== 'object'))) {
         throw new Error('Invalid input (see https://webdriver.io/docs/api/browser/setCookies for documentation)')
     }
 
-    await Promise.all(cookieObjsList
-        .map(cookieObj => this.addCookie(cookieObj)))
+    /**
+     * if session doesn't use Bidi, use WebDriver Classic command
+     */
+    if (!this.isBidi) {
+        await Promise.all(cookieObjsList.map(cookieObj => this.addCookie(cookieObj)))
+        return
+    }
+
+    /**
+     * only fetch current url of browsing context if not all cookies have a domain set
+     */
+    let url: URL
+    try {
+        url = new URL(await this.getUrl())
+        if (url.origin === 'null') {
+            await Promise.all(cookieObjsList.map(cookieObj => this.addCookie(cookieObj)))
+            return
+        }
+    } catch {
+        await Promise.all(cookieObjsList.map(cookieObj => this.addCookie(cookieObj)))
+        return
+    }
+
+    try {
+        await Promise.all(cookieObjsList.map((cookie) => (
+            this.storageSetCookie({
+                cookie: {
+                    ...cookie,
+                    domain: cookie.domain || url.hostname,
+                    value: {
+                        type: 'string',
+                        value: cookie.value,
+                    }
+                },
+                partition: {
+                    type: 'storageKey',
+                    sourceOrigin: url.origin
+                }
+            })
+        )))
+    } catch (err) {
+        log.warn(`BiDi setCookies failed, falling back to classic: ${(err as Error).message}`)
+        await Promise.all(cookieObjsList.map(cookieObj => this.addCookie(cookieObj)))
+    }
     return
 }

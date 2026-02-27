@@ -1,4 +1,5 @@
-import { getElementFromResponse } from '../../utils'
+import type { ElementReference } from '@wdio/protocols'
+import { getElementFromResponse } from '../../utils/index.js'
 
 /**
  *
@@ -15,21 +16,21 @@ import { getElementFromResponse } from '../../utils'
         <option value="someValue5">seis</option>
     </select>
     :selectByIndex.js
-    it('Should demonstrate the selectByIndex command', () => {
-        const selectBox = $('#selectbox');
-        console.log(selectBox.getValue()); // returns "someValue0"
-        selectBox.selectByIndex(4);
-        console.log(selectBox.getValue()); // returns "someValue4"
+    it('Should demonstrate the selectByIndex command', async () => {
+        const selectBox = await $('#selectbox');
+        console.log(await selectBox.getValue()); // returns "someValue0"
+        await selectBox.selectByIndex(4);
+        console.log(await selectBox.getValue()); // returns "someValue4"
     });
  * </example>
  *
  * @alias element.selectByIndexs
- * @param {Number} index      option index
+ * @param {number} index      option index
  * @uses protocol/findElementsFromElement, protocol/elementClick
  * @type action
  *
  */
-export default async function selectByIndex (
+export async function selectByIndex (
     this: WebdriverIO.Element,
     index: number
 ) {
@@ -40,18 +41,27 @@ export default async function selectByIndex (
         throw new Error('Index needs to be 0 or any other positive number')
     }
 
+    const fetchOptionElements = async () => {
+        return this.findElementsFromElement(this.elementId, 'css selector',  'option')
+    }
+
     /**
     * get option elememnts using css
     */
-    const optionElements = await this.findElementsFromElement(this.elementId, 'css selector',  'option')
+    let optionElements: ElementReference[] = []
+    await this.waitUntil(async () => {
+        optionElements = await fetchOptionElements()
+        return optionElements.length > 0
+    }, {
+        timeoutMsg: 'Select element doesn\'t contain any option element'
+    })
 
-    if (optionElements.length === 0) {
-        throw new Error('Select element doesn\'t contain any option element')
-    }
-
-    if (optionElements.length - 1 < index) {
-        throw new Error(`Option with index "${index}" not found. Select element only contains ${optionElements.length} option elements`)
-    }
+    await this.waitUntil(async () => {
+        optionElements = await fetchOptionElements()
+        return typeof optionElements[index] !== 'undefined'
+    }, {
+        timeoutMsg: `Option with index "${index}" not found. Select element only contains ${optionElements.length} option elements`
+    })
 
     /**
     * select option

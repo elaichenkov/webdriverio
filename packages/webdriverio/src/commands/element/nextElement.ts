@@ -10,19 +10,20 @@
         <p>Sibling Three</p>
     </div>
     :nextElement.js
-    it('should get text from next sibling element', () => {
-        const elem = $$('p');
-        console.log(elem[1].nextElement().getText()); // outputs: "Sibling Three"
+    it('should get text from next sibling element', async () => {
+        const elem = await $$('p');
+        const nextElement = await elem[1].nextElement()
+        console.log(await nextElement.getText()); // outputs: "Sibling Three"
     });
  * </example>
  *
  * @alias element.nextElement
- * @return {Element}
+ * @return {WebdriverIO.Element}
  * @type utility
  */
 
-export default function nextElement (this: WebdriverIO.Element) {
-    return this.$(/* istanbul ignore next */ function (this: HTMLElement) {
+export function nextElement (this: WebdriverIO.Element) {
+    return this.$(/* istanbul ignore next */ function nextElement (this: HTMLElement) {
         return this.nextElementSibling as HTMLElement
     })
 }

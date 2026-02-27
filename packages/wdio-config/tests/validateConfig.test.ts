@@ -1,4 +1,6 @@
-import { validateConfig } from '../src/utils'
+import { describe, it, expect } from 'vitest'
+import { validateConfig } from '../src/utils.js'
+import { HOOK_DEFINITION } from '@wdio/utils'
 
 describe('validateConfig', () => {
     it('should throw if required config is missing', () => {
@@ -31,7 +33,7 @@ describe('validateConfig', () => {
     })
 
     it('should check for types as function', () => {
-        const errorCheck = (type) => {
+        const errorCheck = (type: any) => {
             if (type instanceof Error) {
                 return
             }
@@ -74,6 +76,7 @@ describe('validateConfig', () => {
     })
 
     it('should keep certain keys if desired', () => {
+        // @ts-expect-error
         expect(validateConfig({
             logLevel: {
                 type: 'string',
@@ -88,5 +91,25 @@ describe('validateConfig', () => {
             logLevel: 'info',
             foo: 'bar'
         })
+    })
+
+    it('should accept arrays of functions for hooks', () => {
+        const hookFn = () => {}
+
+        expect(() => validateConfig({
+            afterCommand: HOOK_DEFINITION
+        }, {
+            afterCommand: [hookFn]
+        })).not.toThrow()
+    })
+
+    it('should reject single function hooks in validation (must be array)', () => {
+        const hookFn = () => {}
+
+        expect(() => validateConfig({
+            afterCommand: HOOK_DEFINITION
+        }, {
+            afterCommand: hookFn
+        })).toThrow(/Expected option "afterCommand" to be type of object but was function/)
     })
 })

@@ -1,4 +1,4 @@
-import { Capabilities } from '@wdio/types'
+import type { Capabilities, Options } from '@wdio/types'
 
 const DEFAULT_HOSTNAME = '127.0.0.1'
 const DEFAULT_PORT = 4444
@@ -10,7 +10,7 @@ const REGION_MAPPING = {
     'us': 'us-west-1.', // default endpoint
     'eu': 'eu-central-1.',
     'eu-central-1': 'eu-central-1.',
-    'us-east-1': 'us-east-1.'
+    'us-east-4': 'us-east-4.',
 }
 
 interface BackendConfigurations {
@@ -19,10 +19,9 @@ interface BackendConfigurations {
     user?: string
     key?: string
     protocol?: string
-    region?: string
-    headless?: boolean
+    region?: Options.SauceRegions
     path?: string
-    capabilities?: Capabilities.RemoteCapabilities | Capabilities.RemoteCapability
+    capabilities?: Capabilities.RequestedStandaloneCapabilities
 }
 
 function getSauceEndpoint (
@@ -43,7 +42,7 @@ function getSauceEndpoint (
  * helper to detect the Selenium backend according to given capabilities
  */
 export default function detectBackend(options: BackendConfigurations = {}) {
-    let { port, hostname, user, key, protocol, region, headless, path, capabilities } = options
+    const { port, hostname, user, key, protocol, region, path, capabilities } = options
 
     /**
      * browserstack
@@ -78,19 +77,30 @@ export default function detectBackend(options: BackendConfigurations = {}) {
      * For Sauce Labs Legacy RDC we only need to determine if the sauce option has a `testobject_api_key`.
      * Same for Sauce Visual where an apiKey can be passed in through the capabilities (soon to be legacy too).
      */
-    const isRDC = Boolean(!Array.isArray(capabilities) && (capabilities as WebDriver.DesiredCapabilities)?.testobject_api_key)
-    const isVisual = Boolean(!Array.isArray(capabilities) && capabilities && (capabilities as WebDriver.DesiredCapabilities)['sauce:visual']?.apiKey)
+    const isVisual = Boolean(!Array.isArray(capabilities) && capabilities && (capabilities as WebdriverIO.Capabilities)['sauce:visual']?.apiKey)
     if ((typeof user === 'string' && typeof key === 'string' && key.length === 36) ||
         // Or only RDC or visual
-        (isRDC || isVisual)
+        isVisual
     ) {
-        // Sauce headless is currently only in us-east-1
-        const sauceRegion = headless ? 'us-east-1' : region as keyof typeof REGION_MAPPING
+        const sauceRegion = region as keyof typeof REGION_MAPPING
 
         return {
             protocol: protocol || 'https',
-            hostname: hostname || getSauceEndpoint(sauceRegion, { isRDC, isVisual }),
+            hostname: hostname || getSauceEndpoint(sauceRegion, { isVisual }),
             port: port || 443,
+            path: path || LEGACY_PATH
+        }
+    }
+
+    /**
+     * Lambdatest
+     * e.g. cYAjKrqGwyPjPQv41ICDF4C5OjlxzA9epZsnugVJJxqOReWRWU
+     */
+    if (typeof user === 'string' && typeof key === 'string' && key.length === 50) {
+        return {
+            protocol: protocol || DEFAULT_PROTOCOL,
+            hostname: hostname || 'hub.lambdatest.com',
+            port: port || 80,
             path: path || LEGACY_PATH
         }
     }
@@ -107,7 +117,7 @@ export default function detectBackend(options: BackendConfigurations = {}) {
     ) {
         throw new Error(
             'A "user" or "key" was provided but could not be connected to a ' +
-            'known cloud service (Sauce Labs, Browerstack or Testingbot). ' +
+            'known cloud service (Sauce Labs, Browerstack, Testingbot or Lambdatest). ' +
             'Please check if given user and key properties are correct!'
         )
     }

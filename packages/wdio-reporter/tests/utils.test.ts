@@ -1,4 +1,26 @@
-import { sanitizeString, sanitizeCaps } from '../src/utils'
+import { describe, expect, vi, it, afterAll } from 'vitest'
+
+import supportsColor from '../src/supportsColor.js'
+import { sanitizeString, sanitizeCaps, pad, color, colorLines } from '../src/utils.js'
+
+vi.mock('../src/supportsColor.js', () => {
+    return {
+        default: new Proxy({
+            stdout: false
+        }, {
+            get: (ctx, prop) => {
+                if (prop === 'stdout') {
+                    return ctx.stdout
+                }
+                if (prop === 'set') {
+                    return (val: boolean) => {
+                        ctx.stdout = val
+                    }
+                }
+            }
+        })
+    }
+})
 
 describe('utils', () => {
     it('sanitizeString', () => {
@@ -12,7 +34,7 @@ describe('utils', () => {
             browserName: 'chrome',
             platform: 'Windows 10',
             version: 'latest',
-            app: 'my-awesome.app'
+            'appium:app': 'my-awesome.app'
         })).toBe('chrome.latest.windows10.my-awesome_app')
         expect(sanitizeCaps({
             browserName: 'chrome',
@@ -22,8 +44,30 @@ describe('utils', () => {
         expect(sanitizeCaps({
             deviceName: 'Android Emulator',
             platformName: 'Android',
-            platformVersion: '6.4',
-            app: 'my-awesome.apk'
-        })).toBe('androidemulator.android.6_4.my-awesome_apk')
+            'appium:platformVersion': '6.4',
+            'appium:app': 'my-awesome.apk'
+        })).toBe('android.androidemulator.6_4.my-awesome_apk')
+    })
+
+    it('pad', () => {
+        expect(pad('foobar', 10)).toBe('    foobar')
+    })
+
+    it('color', () => {
+        expect(color('fast', 'foobar')).toBe('foobar')
+        // @ts-ignore
+        supportsColor.set(true)
+        expect(color('fast', 'foobar')).toBe('\u001b[90mfoobar\u001b[0m')
+    })
+
+    it('colorLines', () => {
+        // @ts-ignore
+        supportsColor.set(false)
+        expect(colorLines('fast', 'foo\nbar\nloo')).toBe('foo\nbar\nloo')
+    })
+
+    afterAll(() => {
+        // @ts-ignore
+        supportsColor.set(true)
     })
 })

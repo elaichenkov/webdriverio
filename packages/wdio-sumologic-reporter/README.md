@@ -7,20 +7,10 @@ WebdriverIO Sumologic Reporter
 
 ## Installation
 
-The easiest way is to keep `@wdio/sumologic-reporter` as a devDependency in your `package.json`.
-
-```json
-{
-  "devDependencies": {
-    "@wdio/sumologic-reporter": "^6.3.6"
-  }
-}
-```
-
-You can simple do it by:
+The easiest way is to keep `@wdio/sumologic-reporter` as a devDependency in your `package.json`, via:
 
 ```sh
-$ npm install @wdio/sumologic-reporter --save-dev
+npm install @wdio/sumologic-reporter --save-dev
 ```
 
 Instructions on how to install `WebdriverIO` can be found [here](https://webdriver.io/docs/gettingstarted).

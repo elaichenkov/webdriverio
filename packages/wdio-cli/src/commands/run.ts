@@ -1,13 +1,18 @@
-import fs from 'fs-extra'
-import path from 'path'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
-import { missingConfigurationPrompt } from './config'
-import { RunCommandArguments } from '../types'
+import type { Argv } from 'yargs'
 
-import Launcher from '../launcher'
-import Watcher from '../watcher'
-import { CLI_EPILOGUE } from '../constants'
-import yargs from 'yargs'
+import Launcher from '../launcher.js'
+import Watcher from '../watcher.js'
+import { coerceOptsFor, } from '../utils.js'
+import { CLI_EPILOGUE } from '../constants.js'
+import type { RunCommandArguments } from '../types.js'
+import { config } from 'create-wdio/config/cli'
+import { ConfigParser } from '@wdio/config/node'
+import logger from '@wdio/logger'
+
+const log = logger('@wdio/cli:run')
 
 export const command = 'run <configPath>'
 
@@ -60,6 +65,17 @@ export const cmdArgs = {
         desc: 'timeout for all waitForXXX commands',
         type: 'number'
     },
+    updateSnapshots: {
+        alias: 's',
+        desc: 'update DOM, image or test snapshots',
+        type: 'string',
+        coerce: (value: string) => {
+            if (value === '') {
+                return 'all'
+            }
+            return value
+        }
+    },
     framework: {
         alias: 'f',
         desc: 'defines the framework (Mocha, Jasmine or Cucumber) to run the specs',
@@ -75,42 +91,60 @@ export const cmdArgs = {
         type: 'array'
     },
     spec: {
-        desc: 'run only a certain spec file - overrides specs piped from stdin',
+        desc: 'run only a certain spec file or wildcard - overrides specs piped from stdin',
         type: 'array'
     },
     exclude: {
-        desc: 'exclude certain spec file from the test run - overrides exclude piped from stdin',
+        desc: 'exclude certain spec file or wildcard from the test run - overrides exclude piped from stdin',
         type: 'array'
     },
+    'repeat': {
+        desc: 'Repeat specific specs and/or suites N times',
+        type: 'number'
+    },
     mochaOpts: {
-        desc: 'Mocha options'
+        desc: 'Mocha options',
+        coerce: coerceOptsFor('mocha')
     },
     jasmineOpts: {
-        desc: 'Jasmine options'
+        desc: 'Jasmine options',
+        coerce: coerceOptsFor('jasmine')
     },
     cucumberOpts: {
-        desc: 'Cucumber options'
+        desc: 'Cucumber options',
+        coerce: coerceOptsFor('cucumber')
     },
-    autoCompileOpts: {
-        desc: 'Auto compilation options'
+    coverage: {
+        desc: 'Enable coverage for browser runner'
+    },
+    shard: {
+        desc: 'Shard tests and execute only the selected shard. Specify in the one-based form like `--shard x/y`, where x is the current and y the total shard.',
+        coerce: (shard: string) => {
+            const [current, total] = shard.split('/').map(Number)
+            if (Number.isNaN(current) || Number.isNaN(total)) {
+                throw new Error('Shard parameter must be in the form `x/y`, where x and y are positive integers.')
+            }
+            return { current, total }
+        }
     }
 } as const
 
-export const builder = (yargs: yargs.Argv) => {
+export const builder = (yargs: Argv) => {
     return yargs
         .options(cmdArgs)
         .example('$0 run wdio.conf.js --suite foobar', 'Run suite on testsuite "foobar"')
         .example('$0 run wdio.conf.js --spec ./tests/e2e/a.js --spec ./tests/e2e/b.js', 'Run suite on specific specs')
+        .example('$0 run wdio.conf.js --shard 1/4', 'Run only the first shard of 4 shards')
         .example('$0 run wdio.conf.js --mochaOpts.timeout 60000', 'Run suite with custom Mocha timeout')
-        .example('$0 run wdio.conf.js --autoCompileOpts.autoCompile=false', 'Disable auto-loading of ts-node or @babel/register')
-        .example('$0 run wdio.conf.js --autoCompileOpts.tsNodeOpts.project=configs/bdd-tsconfig.json', 'Run suite with ts-node using custom tsconfig.json')
+        .example('$0 run wdio.conf.js --tsConfigPath=./configs/bdd-tsconfig.json', 'Run suite with tsx using custom tsconfig.json')
         .epilogue(CLI_EPILOGUE)
         .help()
 }
 
-export function launchWithStdin (wdioConfPath: string, params: Partial<RunCommandArguments>) {
+export function launchWithStdin(wdioConfPath: string, params: Partial<RunCommandArguments>) {
     let stdinData = ''
-    const stdin = process.openStdin()
+    process.stdin.resume()
+    const stdin = process.stdin
 
     stdin.setEncoding('utf8')
     stdin.on('data', (data) => {
@@ -124,39 +158,82 @@ export function launchWithStdin (wdioConfPath: string, params: Partial<RunComman
     })
 }
 
-export function launch (wdioConfPath: string, params: Partial<RunCommandArguments>) {
+export async function launch(wdioConfPath: string, params: Partial<RunCommandArguments>) {
     const launcher = new Launcher(wdioConfPath, params)
     return launcher.run()
         .then((...args) => {
             /* istanbul ignore if */
-            if (!process.env.JEST_WORKER_ID) {
+            if (!process.env.WDIO_UNIT_TESTS) {
                 process.exit(...args)
             }
         })
         .catch(err => {
             console.error(err)
             /* istanbul ignore if */
-            if (!process.env.JEST_WORKER_ID) {
+            if (!process.env.WDIO_UNIT_TESTS) {
                 process.exit(1)
             }
         })
 }
 
-export async function handler (argv: RunCommandArguments) {
-    const { configPath, ...params } = argv
+export async function handler(argv: RunCommandArguments) {
+    const { configPath = 'wdio.conf.js', ...params } = argv
 
-    if (!fs.existsSync(configPath)) {
-        await missingConfigurationPrompt('run', `No WebdriverIO configuration found in "${process.cwd()}"`)
+    const wdioConf = await config.formatConfigFilePaths(configPath)
+    const confAccess = await config.canAccessConfigPath(wdioConf.fullPathNoExtension, wdioConf.fullPath)
+    if (!confAccess) {
+        try {
+            await config.missingConfigurationPrompt('run', wdioConf.fullPathNoExtension)
+            if (process.env.WDIO_UNIT_TESTS) {
+                return
+            }
+
+            return handler(argv)
+        } catch {
+            process.exit(1)
+        }
     }
 
-    const localConf = path.join(process.cwd(), 'wdio.conf.js')
-    const wdioConf = configPath || (fs.existsSync(localConf) ? localConf : undefined) as string
+    /**
+     * In order to support custom tsconfig path option we have to check here whether a custom path
+     * path was provided and set the `TSX_TSCONFIG_PATH` environment variable accordingly. In a later
+     * step within the Launcher we will then load tsx with the custom tsconfig path.
+     */
+    const tsConfigPathFromEnvVar = (
+        process.env.TSCONFIG_PATH && path.resolve(process.cwd(), process.env.TSCONFIG_PATH)
+    ) || (
+        process.env.TSX_TSCONFIG_PATH && path.resolve(process.cwd(), process.env.TSX_TSCONFIG_PATH)
+    )
+    const tsConfigPathFromParams = params.tsConfigPath && path.resolve(process.cwd(), params.tsConfigPath)
+    const tsConfigPathRelativeToWdioConfig = path.join(path.dirname(confAccess), 'tsconfig.json')
+
+    /**
+     * Load tsx before attempting to read the config file if it's TypeScript.
+     * This prevents "Unknown file extension" errors when calling tsConfigPathFromConfigFile.
+     */
+    const TS_FILE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts']
+    if (TS_FILE_EXTENSIONS.some((ext) => confAccess.endsWith(ext))) {
+        const { resolve } = await import('import-meta-resolve')
+        const tsxPath = resolve('tsx', import.meta.url)
+        await import(tsxPath)
+    }
+
+    const localTSConfigPath = (
+        tsConfigPathFromEnvVar ||
+        tsConfigPathFromParams ||
+        await tsConfigPathFromConfigFile(confAccess, params) ||
+        tsConfigPathRelativeToWdioConfig
+    )
+    const hasLocalTSConfig = await fs.access(localTSConfigPath).then(() => true, () => false)
+    if (hasLocalTSConfig) {
+        process.env.TSX_TSCONFIG_PATH = localTSConfigPath
+    }
 
     /**
      * if `--watch` param is set, run launcher in watch mode
      */
     if (params.watch) {
-        const watcher = new Watcher(wdioConf, params)
+        const watcher = new Watcher(confAccess, params)
         return watcher.watch()
     }
 
@@ -168,12 +245,27 @@ export async function handler (argv: RunCommandArguments) {
      * stdin.isTTY is false when command is from nodes spawn since it's treated as a pipe
      */
     if (process.stdin.isTTY || !process.stdout.isTTY) {
-        return launch(wdioConf, params)
+        return launch(confAccess, params)
     }
 
     /*
      * get a list of spec files to run from stdin, overriding any other
      * configuration suite or specs.
      */
-    launchWithStdin(wdioConf, params)
+    launchWithStdin(confAccess, params)
+}
+
+async function tsConfigPathFromConfigFile(wdioConfPath: string, params: Partial<RunCommandArguments>): Promise<string | void> {
+    try {
+        const configParser = new ConfigParser(wdioConfPath, params)
+        await configParser.initialize()
+        const { tsConfigPath } = configParser.getConfig()
+        if (tsConfigPath) {
+            return tsConfigPath
+        }
+    } catch {
+        log.debug(`Unable to parse config file. If tsConfigPath is set in ${wdioConfPath}, it will be ignored.`)
+        return
+    }
+    return
 }

@@ -1,17 +1,17 @@
 {
   "name": "@wdio/cucumber-framework",
-  "version": "7.5.2",
+  "version": "9.24.0",
   "description": "A WebdriverIO plugin. Adapter for Cucumber.js testing framework.",
-  "author": "Christian Bromann <christian@saucelabs.com>",
+  "author": "Christian Bromann <mail@bromann.dev>",
   "homepage": "https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-cucumber-framework",
   "license": "MIT",
-  "main": "./build/index",
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=18.20.0"
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/webdriverio/webdriverio.git"
+    "url": "git+https://github.com/webdriverio/webdriverio.git",
+    "directory": "packages/wdio-cucumber-framework"
   },
   "keywords": [
     "webdriver",
@@ -21,26 +21,39 @@
   "bugs": {
     "url": "https://github.com/webdriverio/webdriverio/issues"
   },
-  "dependencies": {
-    "@cucumber/cucumber": "7.0.0",
-    "@cucumber/gherkin": "17.0.1",
-    "@cucumber/messages": "15.0.0",
-    "@types/is-glob": "^4.0.1",
-    "@types/mockery": "^1.4.29",
-    "@wdio/logger": "7.4.2",
-    "@wdio/types": "7.5.2",
-    "@wdio/utils": "7.5.2",
-    "expect-webdriverio": "^2.0.0",
-    "glob": "^7.1.2",
-    "is-glob": "^4.0.0",
-    "long": "^4.0.0",
-    "mockery": "~2.1.0"
+  "main": "./build/index.cjs",
+  "type": "module",
+  "module": "./build/index.js",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js",
+      "requireSource": "./src/index.cts",
+      "require": "./build/index.cjs"
+    },
+    "./formatter": {
+      "source": "./src/cucumberFormatter.ts",
+      "import": "./build/cucumberFormatter.js"
+    }
   },
-  "peerDependencies": {
-    "@wdio/cli": "^7.0.0"
+  "types": "./build/index.d.ts",
+  "typeScriptVersion": "3.8.3",
+  "dependencies": {
+    "@cucumber/cucumber": "^10.3.1",
+    "@cucumber/gherkin": "29.0.0",
+    "@cucumber/messages": "26.0.1",
+    "@types/node": "^20.1.0",
+    "@wdio/logger": "workspace:*",
+    "@wdio/types": "workspace:*",
+    "@wdio/utils": "workspace:*",
+    "glob": "^10.2.2",
+    "import-meta-resolve": "^4.1.0",
+    "is-glob": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/is-glob": "^4.0.1"
   },
   "publishConfig": {
     "access": "public"
-  },
-  "types": "./build/index.d.ts"
+  }
 }

@@ -1,11 +1,14 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import got from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, beforeEach, afterEach, it, vi } from 'vitest'
+import { remote } from '../../../src/index.js'
 
-jest.useFakeTimers()
+vi.mock('fetch')
+vi.useFakeTimers()
+vi.spyOn(global, 'setTimeout')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('pause test', () => {
-    let browser: WebdriverIO.BrowserObject
+    let browser: WebdriverIO.Browser
     beforeEach(async () => {
         browser = await remote({
             baseUrl: 'http://foobar.com',
@@ -29,6 +32,6 @@ describe('pause test', () => {
     })
 
     afterEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 })

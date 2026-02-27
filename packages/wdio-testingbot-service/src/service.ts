@@ -1,15 +1,13 @@
-import got from 'got'
 import logger from '@wdio/logger'
-import { Capabilities, Options, Services, Frameworks } from '@wdio/types'
-import type { Browser, MultiRemoteBrowser } from 'webdriverio'
+import type { Capabilities, Options, Services, Frameworks } from '@wdio/types'
 
-import { TestingbotOptions } from './types'
+import type { TestingbotOptions } from './types.js'
 
 const log = logger('@wdio/testingbot-service')
 const jobDataProperties = ['name', 'tags', 'public', 'build', 'extra']
 
 export default class TestingBotService implements Services.ServiceInstance {
-    private _browser?: Browser<'async'> | MultiRemoteBrowser<'async'>
+    private _browser?: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser
     private _isServiceEnabled?: boolean
     private _suiteTitle?: string
     private _tbSecret?: string
@@ -19,8 +17,8 @@ export default class TestingBotService implements Services.ServiceInstance {
 
     constructor (
         private _options: TestingbotOptions,
-        private _capabilities: Capabilities.RemoteCapability,
-        private _config: Omit<Options.Testrunner, 'capabilities'>
+        private _capabilities: Capabilities.ResolvedTestrunnerCapabilities,
+        private _config: Options.Testrunner
     ) {
         this._tbUser = this._config.user
         this._tbSecret = this._config.key
@@ -31,14 +29,14 @@ export default class TestingBotService implements Services.ServiceInstance {
     before (
         caps: unknown,
         specs: unknown,
-        browser: Browser<'async'> | MultiRemoteBrowser<'async'>
+        browser: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser
     ) {
         this._browser = browser
     }
 
     /**
      * Before suite
-     * @param {Object} suite Suite
+     * @param {object} suite Suite
     */
     beforeSuite (suite: Frameworks.Suite) {
         this._suiteTitle = suite.title
@@ -46,7 +44,7 @@ export default class TestingBotService implements Services.ServiceInstance {
 
     /**
      * Before test
-     * @param {Object} test Test
+     * @param {object} test Test
     */
     beforeTest (test: Frameworks.Test) {
         if (!this._isServiceEnabled || !this._browser) {
@@ -73,8 +71,25 @@ export default class TestingBotService implements Services.ServiceInstance {
              */
             `${test.parent} - ${test.title}`
         )
+        return this.setAnnotation(`tb:test-context=${context}`)
+    }
 
-        this._browser.execute('tb:test-context=' + context)
+    /**
+     * Update the running test on TestingBot with an annotation
+     */
+    async setAnnotation (annotation: string) {
+        if (!this._browser) {
+            return
+        }
+
+        if (this._browser.isMultiremote) {
+            return Promise.all(Object.keys(this._capabilities).map(async (browserName) => {
+                const multiRemoteBrowser = (this._browser as WebdriverIO.MultiRemoteBrowser).getInstance(browserName)
+                return multiRemoteBrowser.executeScript(annotation, [])
+            }))
+        }
+
+        return (this._browser as WebdriverIO.Browser).executeScript(annotation, [])
     }
 
     afterSuite (suite: Frameworks.Suite) {
@@ -85,9 +100,9 @@ export default class TestingBotService implements Services.ServiceInstance {
 
     /**
      * After test
-     * @param {Object} test Test
+     * @param {object} test Test
      */
-    afterTest (test: Frameworks.Test, context: any, results: Frameworks.TestResult) {
+    afterTest (_test: Frameworks.Test, _context: unknown, results: Frameworks.TestResult) {
         if (!results.passed) {
             ++this._failures
         }
@@ -100,7 +115,7 @@ export default class TestingBotService implements Services.ServiceInstance {
     /**
      * Before feature
      * @param {string} uri
-     * @param {Object} feature
+     * @param {object} feature
      */
     beforeFeature (uri: unknown, feature: { name: string }) {
         if (!this._isServiceEnabled || !this._browser) {
@@ -108,33 +123,35 @@ export default class TestingBotService implements Services.ServiceInstance {
         }
 
         this._suiteTitle = feature.name
-        this._browser.execute('tb:test-context=Feature: ' + this._suiteTitle)
+        return this.setAnnotation(`tb:test-context=Feature: ${this._suiteTitle}`)
     }
 
     /**
      * Before scenario
      * @param {string} uri
-     * @param {Object} feature
-     * @param {Object} scenario
+     * @param {object} feature
+     * @param {object} scenario
      */
     beforeScenario (world: Frameworks.World) {
         if (!this._isServiceEnabled || !this._browser) {
             return
         }
         const scenarioName = world.pickle.name
-        this._browser.execute('tb:test-context=Scenario: ' + scenarioName)
+        return this.setAnnotation(`tb:test-context=Scenario: ${scenarioName}`)
     }
 
     /**
-     * After scenario
-     * @param {string} uri
-     * @param {Object} feature
-     * @param {Object} pickle
-     * @param {Object} result
+     *
+     * Runs before a Cucumber Scenario.
+     * @param world world object containing information on pickle and test step
+     * @param result result object containing
+     * @param result.passed   true if scenario has passed
+     * @param result.error    error stack if scenario failed
+     * @param result.duration duration of scenario in milliseconds
      */
-    afterScenario(world: Frameworks.World) {
+    afterScenario(world: Frameworks.World, result: Frameworks.PickleResult) {
         // check if scenario has failed
-        if (world.result && world.result.status === 6) {
+        if (!result.passed) {
             ++this._failures
         }
     }
@@ -165,10 +182,10 @@ export default class TestingBotService implements Services.ServiceInstance {
             return this.updateJob(this._browser.sessionId, failures)
         }
 
-        const browser = this._browser as MultiRemoteBrowser<'async'>
+        const browser = this._browser as WebdriverIO.MultiRemoteBrowser
         return Promise.all(Object.keys(this._capabilities).map((browserName) => {
-            log.info(`Update multiremote job for browser "${browserName}" and sessionId ${browser[browserName].sessionId}, ${status}`)
-            return this.updateJob(browser[browserName].sessionId, failures, false, browserName)
+            log.info(`Update multiremote job for browser "${browserName}" and sessionId ${browser.getInstance(browserName).sessionId}, ${status}`)
+            return this.updateJob(browser.getInstance(browserName).sessionId, failures, false, browserName)
         }))
     }
 
@@ -183,9 +200,9 @@ export default class TestingBotService implements Services.ServiceInstance {
             return this.updateJob(oldSessionId, this._failures, true)
         }
 
-        const browser = this._browser as MultiRemoteBrowser<'async'>
+        const browser = this._browser as WebdriverIO.MultiRemoteBrowser
         const browserName = browser.instances.filter(
-            (browserName: string) => browser[browserName].sessionId === newSessionId)[0]
+            (browserName: string) => browser.getInstance(browserName).sessionId === newSessionId)[0]
         log.info(`Update (reloaded) multiremote job for browser "${browserName}" and sessionId ${oldSessionId}, ${status}`)
         return this.updateJob(oldSessionId, this._failures, true, browserName)
     }
@@ -194,17 +211,25 @@ export default class TestingBotService implements Services.ServiceInstance {
         if (!this._browser) {
             return
         }
-
+        let headers: Record<string, string> = {
+            'Content-Type': 'application/json; charset=utf-8',
+        }
+        if (this._tbUser && this._tbSecret) {
+            const encodedAuth = Buffer.from(`${this._tbUser}:${this._tbSecret}`, 'utf8').toString('base64')
+            headers = {
+                ...headers,
+                Authorization: `Basic ${encodedAuth}`,
+            }
+        }
         const json = this.getBody(failures, calledOnReload, browserName)
         this._failures = 0
-        const response = await got.put(this.getRestUrl(sessionId), {
-            json,
-            responseType: 'json',
-            username: this._tbUser,
-            password: this._tbSecret
+        const response = await fetch(this.getRestUrl(sessionId), {
+            method: 'PUT',
+            body: JSON.stringify(json),
+            headers
         })
 
-        return response.body
+        return await response.json()
     }
 
     /**
@@ -217,12 +242,12 @@ export default class TestingBotService implements Services.ServiceInstance {
     }
 
     getBody (failures: number, calledOnReload = false, browserName?: string) {
-        let body = { test: {} as any }
+        const body = { test: {} as Record<string, string | undefined> }
 
         /**
          * set default values
          */
-        body.test['name'] = this._suiteTitle
+        body.test.name = this._suiteTitle
 
         /**
          * add reload count to title if reload is used
@@ -230,25 +255,25 @@ export default class TestingBotService implements Services.ServiceInstance {
         if ((calledOnReload || this._testCnt) && this._browser) {
             let testCnt = ++this._testCnt
             if (this._browser.isMultiremote) {
-                testCnt = Math.ceil(testCnt / (this._browser as MultiRemoteBrowser<'async'>).instances.length)
+                testCnt = Math.ceil(testCnt / (this._browser as WebdriverIO.MultiRemoteBrowser).instances.length)
             }
 
-            body.test['name'] += ` (${testCnt})`
+            body.test.name += ` (${testCnt})`
         }
 
-        for (let prop of jobDataProperties) {
-            if (!(this._capabilities as Record<string, any>)[prop]) {
+        for (const prop of jobDataProperties) {
+            if (!(this._capabilities as Record<string, unknown>)[prop]) {
                 continue
             }
 
-            body.test[prop] = (this._capabilities as Record<string, any>)[prop]
+            body.test[prop] = (this._capabilities as Record<string, string>)[prop]
         }
 
         if (browserName) {
-            body.test['name'] = `${browserName}: ${body.test['name']}`
+            body.test.name = `${browserName}: ${body.test.name}`
         }
 
-        body.test['success'] = failures === 0 ? '1' : '0'
+        body.test.success = failures === 0 ? '1' : '0'
         return body
     }
 }

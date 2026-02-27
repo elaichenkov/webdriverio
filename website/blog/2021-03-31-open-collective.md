@@ -1,11 +1,11 @@
 ---
 title: WebdriverIO Opens an OpenCollective
-author: Christian Bromann
-authorURL: http://twitter.com/bromann
-authorImageURL: https://s.gravatar.com/avatar/d98b16d7c93d15865f34a225dd4b1254?s=80
+authors: bromann
 ---
 
 Today the WebdriverIO team announced in their [OpenJS Foundation](https://openjsf.org/) Q&A session that the project opens an [OpenCollective](https://opencollective.com/webdriverio) to allow users and companies to donate to the development of the project and support community members to run WebdriverIO workshops and other types of events. This allows everyone to be paid to work on features and bug fixes as well as help the community to pay for pizza or rental space when hosting WebdriverIO workshops or meetups.
+
+<!-- truncate -->
 
 If your company uses WebdriverIO and benefits from it, please ask your manager or your marketing team to support the project by donating to the collective. Support will allow the maintainers to dedicate more time for maintenance and new features for everyone.
 
@@ -45,7 +45,7 @@ We understand that $1000 for fixing 10 bugs or implementing 10 features may seem
 If you are a member of the [Technical Steering Committee team](https://github.com/webdriverio/webdriverio/blob/main/AUTHORS.md#tsc-technical-steering-committee) you are eligible to expense flights and hotel accommodations for travel to conferences or meetups as part of a speaking engagement on WebdriverIO, not paid by the event itself or a company. You may expense up to $500. Reimbursement requirements for travel expenses include:
 
 - You must send out a post from your main social media account (e.g. Twitter, LinkedIn or personal blog) thanking all contributors of the collective after the event took place.
-- You must use the funds for qualified travel expenses such as ground or air transportation to the event and hotel accomodations.
+- You must use the funds for qualified travel expenses such as ground or air transportation to the event and hotel accommodations.
 - You must submit receipts with your reimbursement request.
 
 Even though currently there are no in-person events happening due to the COVID-19 pandemic, we hope that we come back to times where we can reconnect with the community on a personal level. For that we would like to support the core team with their travel expenses.

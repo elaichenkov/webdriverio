@@ -1,649 +1,584 @@
-import { CommandArgs, SuiteStats, TestStats } from '@wdio/reporter'
-import AllureReporter from '../src'
-import { linkPlaceholder } from '../src/constants'
+import path from 'node:path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Label, Link, Parameter } from 'allure-js-commons'
+import {
+    attachment,
+    ContentType,
+    description,
+    issue,
+    label,
+    LabelName,
+    LinkType,
+    Stage,
+    Status,
+    tms
+} from 'allure-js-commons'
+import AllureReporter from '../src/reporter.js'
+import { clean, getResults } from './helpers/wdio-allure-helper.js'
+import { events } from '../src/constants.js'
+import { temporaryDirectory } from 'tempy'
+import { cid, runnerEnd, runnerStart } from './__fixtures__/runner.js'
+import { testPassed, testStart } from './__fixtures__/testState.js'
+import { suiteEnd, suiteStart } from './__fixtures__/suite.js'
+import type { HookStats } from '@wdio/reporter'
+import { addArgument } from '../src/common/api.js'
 
-let processOn: any
-beforeAll(() => {
-    processOn = process.on.bind(process)
-    process.on = jest.fn()
+const hoisted = vi.hoisted(() => ({
+    getCid: () => '0-0'
+}))
+
+vi.mock('@wdio/reporter', () => import(path.join(process.cwd(), '__mocks__', '@wdio/reporter')))
+vi.mock('../src/utils', async (importOriginal) => {
+    const { cid } = await import('./__fixtures__/runner.js')
+    const original = await importOriginal()
+
+    return {
+        ...original,
+        getCid: () => hoisted.getCid,
+    }
 })
 
-afterAll(() => {
-    process.on = processOn
+beforeEach(() => {
+    vi.clearAllMocks()
 })
 
 describe('reporter runtime implementation', () => {
-    it('should correct add custom label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
+    const outputDir = temporaryDirectory()
+
+    beforeEach(() => {
+        clean(outputDir)
+    })
+
+    it('adds custom label via allure runtime', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label('customLabel', 'Label')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        expect(results[0].labels.find((l: Label) => l.name === 'customLabel')!.value).toBe('Label')
+    })
+
+    it('adds story label', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label(LabelName.STORY, 'foo')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.STORY)!.value).toBe('foo')
+    })
+
+    it('adds feature label', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label(LabelName.FEATURE, 'foo')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.FEATURE)!.value).toBe('foo')
+    })
+
+    it('adds severity label', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label(LabelName.SEVERITY, 'critical')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.SEVERITY)!.value).toBe('critical')
+    })
+
+    it('adds suite/subSuite/parentSuite labels', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label(LabelName.SUITE, 'suiteA')
+        await label(LabelName.SUB_SUITE, 'subA')
+        await label(LabelName.PARENT_SUITE, 'parentA')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.SUITE)!.value).toBe('suiteA')
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.SUB_SUITE)!.value).toBe('subA')
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.PARENT_SUITE)!.value).toBe('parentA')
+    })
+
+    it('adds tag/epic/as_id', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await label(LabelName.TAG, 'foo')
+        await label(LabelName.EPIC, 'epic-1')
+        await label(LabelName.AS_ID, 'A-42')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.TAG)!.value).toBe('foo')
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.EPIC)!.value).toBe('epic-1')
+        expect(results[0].labels.find((l: Label) => l.name === LabelName.AS_ID)!.value).toBe('A-42')
+    })
+
+    it('adds issue link using links mapping', async () => {
+        const reporter = new AllureReporter({
+            outputDir,
+            links: { issue: { urlTemplate: 'http://example.com/%s' } }
         })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addLabel({ name: 'customLabel', value: 'Label' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('customLabel', 'Label')
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await issue('1')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].links.find((ln: Link) => ln.type === LinkType.ISSUE)!.url).toBe('http://example.com/1')
     })
 
-    it('should correct add story label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
+    it('adds tms link using links mapping', async () => {
+        const reporter = new AllureReporter({
+            outputDir,
+            links: { tms: { urlTemplate: 'https://webdriver.io/%s' } }
         })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addStory({ storyName: 'foo' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('story', 'foo')
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await tms('2')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].links.find((ln: Link) => ln.type === LinkType.TMS)!.url).toBe('https://webdriver.io/2')
     })
 
-    it('should correct add feature label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addFeature({ featureName: 'foo' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('feature', 'foo')
+    it('adds description (markdown)', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await description('foo')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].description).toBe('foo')
     })
 
-    it('should correct add severity label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addSeverity({ severity: 'foo' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('severity', 'foo')
+    it('adds HTML description', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await description('<b>foo</b>')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].descriptionHtml ?? results[0].description).toBe('<b>foo</b>')
     })
 
-    it('should correctly add issue label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addIssue({ issue: '1' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('issue', '1')
+    it('adds attachment (text)', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        await attachment('foo', 'bar', ContentType.TEXT)
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].steps[0].attachments).toHaveLength(1)
     })
 
-    it('should correctly add issue label with link', () => {
-        const reporter = new AllureReporter({ issueLinkTemplate: `http://example.com/${linkPlaceholder}` })
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addIssue({ issue: '1' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('issue', 'http://example.com/1')
+    it('adds attachment (application/json)', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        //@ts-ignore
+        await attachment('foo', { a: 1 }, ContentType.JSON)
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].steps[0].attachments).toHaveLength(1)
     })
 
-    it('should correctly add test id label', () => {
-        const reporter = new AllureReporter()
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addTestId({ testId: '2' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('testId', '2')
+    it('start/end step via process events', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        // @ts-ignore
+        process.emit(events.startStep, 'bar')
+        // @ts-ignore
+        process.emit(events.endStep, Status.FAILED)
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].steps[0].name).toBe('bar')
+        expect(results[0].steps[0].status).toBe(Status.FAILED)
+        expect(results[0].steps[0].stage).toBe(Stage.FINISHED)
     })
 
-    it('should correctly add test id label with link', () => {
-        const reporter = new AllureReporter({ tmsLinkTemplate: `https://webdriver.io/${linkPlaceholder}` })
-        const addLabel = jest.fn()
-        const mock = jest.fn(() => {
-            return { addLabel }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addTestId({ testId: '2' })
-        expect(addLabel).toHaveBeenCalledTimes(1)
-        expect(addLabel).toHaveBeenCalledWith('testId', 'https://webdriver.io/2')
-    })
-
-    it('should correct add environment', () => {
-        const reporter = new AllureReporter()
-        const addParameter = jest.fn()
-        const mock = jest.fn(() => {
-            return { addParameter }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addEnvironment({ name: 'foo', value: 'bar' })
-        expect(addParameter).toHaveBeenCalledTimes(1)
-        expect(addParameter).toHaveBeenCalledWith('environment-variable', 'foo', 'bar')
-    })
-
-    it('should correct add description', () => {
-        const reporter = new AllureReporter()
-        const setDescription = jest.fn()
-        const mock = jest.fn(() => {
-            return { setDescription }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addDescription({ description: 'foo', descriptionType: 'bar' })
-        expect(setDescription).toHaveBeenCalledTimes(1)
-        expect(setDescription).toHaveBeenCalledWith('foo', 'bar')
-    })
-
-    it('should correct add attachment', () => {
-        const reporter = new AllureReporter()
-        const addAttachment = jest.fn()
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => true),
-            getCurrentTest: jest.fn(() => true),
-            addAttachment
-        } as any
-
-        reporter.addAttachment({ name: 'foo', content: 'bar', type: 'baz' })
-        expect(addAttachment).toHaveBeenCalledTimes(1)
-        expect(addAttachment).toHaveBeenCalledWith('foo', Buffer.from('bar'), 'baz')
-    })
-
-    it('should correct add "application/json" attachment', () => {
-        const reporter = new AllureReporter()
-        const dumpJSON = jest.fn()
-        reporter.dumpJSON = dumpJSON
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => true),
-            getCurrentTest: jest.fn(() => true),
-        } as any
-
-        reporter.addAttachment({ name: 'foo', content: 'bar', type: 'application/json' })
-        expect(dumpJSON).toHaveBeenCalledWith('foo', 'bar')
-    })
-
-    it('should allow to start end step', () => {
-        const reporter = new AllureReporter()
-        const startStep = jest.fn()
-        const endStep = jest.fn()
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => true),
-            getCurrentTest: jest.fn(() => true),
-            startStep,
-            endStep
-        } as any
-        reporter.startStep('bar')
-        reporter.endStep('failed')
-
-        expect(startStep).toHaveBeenCalledTimes(1)
-        expect(endStep).toHaveBeenCalledTimes(1)
-
-        expect(startStep).toHaveBeenCalledWith('bar')
-        expect(endStep).toHaveBeenCalledWith('failed')
-    })
-
-    it('should correct add step with attachment', () => {
-        const reporter = new AllureReporter()
-        const startStep = jest.fn()
-        const endStep = jest.fn()
-        const addAttachment = jest.fn()
-        reporter.addAttachment = addAttachment
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => true),
-            getCurrentTest: jest.fn(() => true),
-            startStep,
-            endStep
-        } as any
-
-        const step = {
-            'step': {
-                'attachment': { 'content': 'baz', 'name': 'attachment' },
-                'status': 'passed',
-                'title': 'foo'
-            }
-        }
-        reporter.addStep(step)
-
-        expect(startStep).toHaveBeenCalledTimes(1)
-        expect(endStep).toHaveBeenCalledTimes(1)
-        expect(addAttachment).toHaveBeenCalledTimes(1)
-
-        expect(startStep).toHaveBeenCalledWith(step.step.title)
-        expect(addAttachment).toHaveBeenCalledWith(step.step.attachment)
-        expect(endStep).toHaveBeenCalledWith(step.step.status)
-    })
-
-    it('should correct add step without attachment', () => {
-        const reporter = new AllureReporter()
-        const startStep = jest.fn()
-        const endStep = jest.fn()
-        const addAttachment = jest.fn()
-        reporter.addAttachment = addAttachment
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => true),
-            getCurrentTest: jest.fn(() => true),
-            startStep,
-            endStep
-        } as any
-
-        const step = { 'step': { 'status': 'passed', 'title': 'foo' } }
-        reporter.addStep(step)
-
-        expect(startStep).toHaveBeenCalledTimes(1)
-        expect(endStep).toHaveBeenCalledTimes(1)
-        expect(addAttachment).toHaveBeenCalledTimes(0)
-
-        expect(startStep).toHaveBeenCalledWith(step.step.title)
-        expect(endStep).toHaveBeenCalledWith(step.step.status)
-    })
-
-    it('should correctly add argument', () => {
-        const reporter = new AllureReporter()
-        const addParameter = jest.fn()
-        const mock = jest.fn(() => {
-            return { addParameter }
-        })
-        reporter['_allure'] = {
-            getCurrentSuite: mock,
-            getCurrentTest: mock,
-        } as any
-
-        reporter.addArgument({ name: 'os', value: 'osx' })
-        expect(addParameter).toHaveBeenCalledTimes(1)
-        expect(addParameter).toHaveBeenCalledWith('argument', 'os', 'osx')
-    })
-
-    it('should do nothing if no tests run', () => {
-        const reporter = new AllureReporter()
-        expect(reporter.addLabel({})).toEqual(false)
-        expect(reporter.addStory({})).toEqual(false)
-        expect(reporter.addFeature({})).toEqual(false)
-        expect(reporter.addSeverity({})).toEqual(false)
-        expect(reporter.addIssue({})).toEqual(false)
-        expect(reporter.addTestId({})).toEqual(false)
-        expect(reporter.addEnvironment({})).toEqual(false)
-        expect(reporter.addDescription({})).toEqual(false)
-        expect(reporter.addAttachment({})).toEqual(false)
-        expect(reporter.startStep('test')).toEqual(false)
-        expect(reporter.endStep('passed')).toEqual(false)
-        expect(reporter.addStep({})).toEqual(false)
-        expect(reporter.addArgument({})).toEqual(false)
+    it('adds parameter (argument)', async () => {
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        // @ts-ignore
+        await addArgument('os', 'osx')
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].parameters.find((p: Parameter) => p.name === 'os')!.value).toBe('osx')
     })
 
     describe('add argument', () => {
-        let reporter: any, addParameter: any, addLabel: any, mock
+        it('should correctly add argument for selenium', async () => {
+            const reporter = new AllureReporter({ outputDir })
+            reporter.onRunnerStart({ ...runnerStart(), capabilities: { browserName: 'firefox', version: '1.2.3' } })
+            reporter.onTestStart(testStart())
+            reporter.onTestPass(testPassed())
+            await reporter.onRunnerEnd(runnerEnd())
+            const { results } = getResults(outputDir)
+            expect(results[0].parameters[0]).toEqual({ name: 'browser', value: 'firefox-1.2.3' })
+        })
 
-        beforeEach(() => {
-            reporter = new AllureReporter()
-            addParameter = jest.fn()
-            addLabel = jest.fn()
-
-            mock = jest.fn(() => {
-                return { addParameter, addLabel }
+        it('should correctly set proper browser version for chrome headless in devtools', async () => {
+            const reporter = new AllureReporter({ outputDir })
+            reporter.onRunnerStart({
+                ...runnerStart(),
+                capabilities: { browserName: 'Chrome Headless', browserVersion: '85.0.4183.84' }
             })
-
-            reporter['_allure'] = {
-                startCase: mock,
-                getCurrentSuite: mock,
-                getCurrentTest: mock,
-            }
+            reporter.onTestStart(testStart())
+            reporter.onTestPass(testPassed())
+            await reporter.onRunnerEnd(runnerEnd())
+            const { results } = getResults(outputDir)
+            expect(results[0].parameters[0]).toEqual({ name: 'browser', value: 'Chrome Headless-85.0.4183.84' })
         })
 
-        it('should correctly add argument for selenium', () => {
-            reporter.onRunnerStart({ config: {}, capabilities: { browserName: 'firefox', version: '1.2.3' } })
-            reporter.onTestStart({ cid: '0-0', title: 'SomeTest' })
-            expect(addParameter).toHaveBeenCalledTimes(1)
-            expect(addParameter).toHaveBeenCalledWith('argument', 'browser', 'firefox-1.2.3')
+        it('should correctly add argument for appium', async  () => {
+            const reporter = new AllureReporter({ outputDir })
+            reporter.onRunnerStart({
+                ...runnerStart(),
+                capabilities: { deviceName: 'Android Emulator', 'appium:platformVersion': '8.0' }
+            })
+            reporter.onTestStart(testStart())
+            reporter.onTestPass(testPassed())
+            await reporter.onRunnerEnd(runnerEnd())
+            const { results } = getResults(outputDir)
+            expect(results[0].parameters[0]).toEqual({ name: 'device', value: 'Android Emulator-8.0' })
         })
 
-        it('should correctly set proper browser version for chrome headless in devtools', () => {
-            reporter.onRunnerStart({ config: {}, capabilities: { browserName: 'Chrome Headless', browserVersion: '85.0.4183.84' } })
-            reporter.onTestStart({ cid: '0-0', title: 'SomeTest' })
-            expect(addParameter).toHaveBeenCalledTimes(1)
-            expect(addParameter).toHaveBeenCalledWith('argument', 'browser', 'Chrome Headless-85.0.4183.84')
+        it('should correctly add device name when run on BrowserStack', async () => {
+            const reporter = new AllureReporter({ outputDir })
+            reporter.onRunnerStart({
+                ...runnerStart(),
+                capabilities: { device: 'Google Pixel 3', 'appium:platformVersion': '9.0' }
+            })
+            reporter.onTestStart(testStart())
+            reporter.onTestPass(testPassed())
+            await reporter.onRunnerEnd(runnerEnd())
+            const { results } = getResults(outputDir)
+            expect(results[0].parameters[0]).toEqual({ name: 'device', value: 'Google Pixel 3-9.0' })
         })
 
-        it('should correctly add argument for appium', () => {
-            reporter.onRunnerStart({ config: {}, capabilities: { deviceName: 'Android Emulator', platformVersion: '8.0' } })
-            reporter.onTestStart({ cid: '0-0', title: 'SomeTest' })
-            expect(addParameter).toHaveBeenCalledTimes(1)
-            expect(addParameter).toHaveBeenCalledWith('argument', 'device', 'Android Emulator-8.0')
-        })
-
-        it('should correctly add device name when run on BrowserStack', () => {
-            reporter.onRunnerStart({ config: {}, capabilities: { device: 'Google Pixel 3', platformVersion: '9.0' } })
-            reporter.onTestStart({ cid: '0-0', title: 'SomeTest' })
-            expect(addParameter).toHaveBeenCalledTimes(1)
-            expect(addParameter).toHaveBeenCalledWith('argument', 'device', 'Google Pixel 3-9.0')
-        })
-
-        it('should correctly add argument for multiremote', () => {
-            reporter.onRunnerStart({ isMultiremote: true, config: { capabilities: { myBrowser: { browserName: 'chrome' } } } })
-            reporter.onTestStart({ cid: '0-0', title: 'SomeTest' })
-            expect(addParameter).toHaveBeenCalledTimes(1)
-            expect(addParameter).toHaveBeenCalledWith('argument', 'isMultiremote', 'true')
+        it('should correctly add argument for multiremote', async () => {
+            const reporter = new AllureReporter({ outputDir })
+            reporter.onRunnerStart({
+                ...runnerStart(),
+                isMultiremote: true,
+                capabilities: { myBrowser: { browserName: 'chrome' } },
+            })
+            reporter.onTestStart(testStart())
+            reporter.onTestPass(testPassed())
+            await reporter.onRunnerEnd(runnerEnd())
+            const { results } = getResults(outputDir)
+            expect(results[0].parameters[0]).toEqual({ name: 'isMultiremote', value: 'true' })
         })
     })
 })
 
 describe('auxiliary methods', () => {
-    it('isScreenshotCommand', () => {
-        const reporter = new AllureReporter()
-        expect(reporter.isScreenshotCommand({ endpoint: '/session/id/screenshot' } as CommandArgs)).toEqual(true)
-        expect(reporter.isScreenshotCommand({ endpoint: '/wdu/hub/session/id/screenshot' } as CommandArgs)).toEqual(true)
-        expect(reporter.isScreenshotCommand({ endpoint: '/session/id/click' } as CommandArgs)).toEqual(false)
-        expect(reporter.isScreenshotCommand({ command: 'takeScreenshot' } as CommandArgs)).toEqual(true)
-        expect(reporter.isScreenshotCommand({ command: 'elementClick' } as CommandArgs)).toEqual(false)
-        expect(reporter.isScreenshotCommand({ endpoint: '/session/id/element/id/screenshot' } as CommandArgs)).toEqual(true)
+    const outputDir = temporaryDirectory()
+
+    beforeEach(() => {
+        clean(outputDir)
     })
 
-    it('dumpJSON', () => {
-        const reporter = new AllureReporter()
-        const addAttachment = jest.fn()
-        reporter['_allure'] = {
-            addAttachment
-        } as any
-        const json = { bar: 'baz' }
-        reporter.dumpJSON('foo', json)
-        expect(addAttachment).toHaveBeenCalledTimes(1)
-        expect(addAttachment).toHaveBeenCalledWith('foo', JSON.stringify(json, null, 2), 'application/json')
-    })
-
-    it('should populate the correct deviceName', () => {
+    it('should populate the correct deviceName', async() => {
         const capabilities = {
             deviceName: 'emulator',
             desired: {
                 platformName: 'Android',
-                automationName: 'UiAutomator2',
-                deviceName: 'Android GoogleAPI Emulator',
-                platformVersion: '6.0',
-                noReset: true,
+                'appium:automationName': 'UiAutomator2',
+                'appium:deviceName': 'Android GoogleAPI Emulator',
+                'appium:platformVersion': '6.0',
+                'appium:noReset': true,
             }
         }
-        const reporter = new AllureReporter()
-        const currentTestMock = { addParameter: jest.fn(), addLabel: jest.fn() }
-        reporter['_allure'].getCurrentTest = jest.fn().mockReturnValue(currentTestMock)
-        reporter['_allure'].startCase = jest.fn()
-        reporter['_isMultiremote'] = false
-        reporter['_capabilities'] = capabilities
-        reporter.onTestStart({ cid: '0-0', title: 'SomeTest' } as TestStats)
-        expect(reporter['_allure'].getCurrentTest).toBeCalledTimes(1)
-        expect(currentTestMock.addParameter).toHaveBeenCalledWith('argument', 'device', 'Android GoogleAPI Emulator 6.0')
+        const reporter = new AllureReporter({ outputDir })
+        reporter.onRunnerStart({ ...runnerStart(), capabilities })
+        reporter.onTestStart(testStart())
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results[0].parameters[0]).toEqual({ name: 'device', value: 'Android GoogleAPI Emulator 6.0' })
     })
 })
 
 describe('hooks handling disabled Mocha Hooks', () => {
-    let reporter: any, startCase: any, endCase: any, startStep: any, endStep: any
-    const allureInstance = ({ suite = {}, test = { steps: [1] } }: any = {}) => ({
-        getCurrentSuite: jest.fn(() => suite),
-        getCurrentTest: jest.fn(() => { return test }),
-        startCase,
-        endCase,
-        startStep,
-        endStep
-    })
+    let reporter: any
+    const outputDir = temporaryDirectory()
 
     beforeEach(() => {
-        reporter = new AllureReporter({ disableMochaHooks: true })
-        reporter.onTestStart = jest.fn(test => startCase(test.title))
-        startCase = jest.fn()
-        endCase = jest.fn(result => result)
-        startStep = jest.fn()
-        endStep = jest.fn(result => result)
+        clean(outputDir)
+        reporter = new AllureReporter({ outputDir, disableMochaHooks: true })
     })
 
-    it('should add test on custom hook', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookStart({ title: 'foo', parent: 'bar' })
-
-        expect(startCase).toHaveBeenCalledTimes(1)
-        expect(startCase).toHaveBeenCalledWith('foo')
-        expect(startStep).toHaveBeenCalledTimes(0)
+    it('does not add test on custom hook', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(suiteStart())
+        reporter.onHookStart({ cid: cid(), title: 'foo', parent: 'bar' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: 'foo', parent: 'bar' } as HookStats)
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
     })
 
-    it('should not add test if no suite', () => {
-        reporter['_allure'] = allureInstance({ suite: false })
-        reporter.onHookStart({ title: 'foo', parent: 'bar' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(0)
+    it('does not add test if no suite', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onHookStart({ cid: cid(), title: 'foo', parent: 'bar' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: 'foo', parent: 'bar' } as HookStats)
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
     })
 
-    it('should ignore global mocha hooks', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookStart({ title: '"after all" hook', parent: '' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(0)
+    it('ignores global mocha hooks', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onHookStart({ cid: cid(), title: '"after all" hook', parent: '' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: '"after all" hook', parent: '' } as HookStats)
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
     })
 
-    it('should capture mocha each hooks', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookStart({ title: '"before each" hook', parent: 'foo' })
-
-        expect(startStep).toHaveBeenCalledTimes(1)
-        expect(startCase).toHaveBeenCalledTimes(0)
+    it('does not capture mocha/jasmine each hooks', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(suiteStart())
+        reporter.onTestStart(testStart())
+        reporter.onHookStart({ cid: cid(), title: '"before each" hook', parent: 'foo' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: '"before each" hook', parent: 'foo' } as HookStats)
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results, containers } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        expect(results[0].status).toEqual(Status.PASSED)
+        expect(results[0].stage).toEqual(Stage.FINISHED)
+        expect(containers).toHaveLength(0)
     })
 
-    it('should ignore mocha each hooks if no test', () => {
-        reporter['_allure'] = allureInstance({ test: null })
-        reporter.onHookStart({ title: '"after each" hook', parent: 'foo' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(0)
+    it('ignores passed mocha/jasmine each hooks if no test', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(suiteStart())
+        reporter.onHookStart({ cid: '0-0', title: '"after each" hook', parent: 'foo' } as HookStats)
+        reporter.onHookEnd({ cid: '0-0', title: '"after each" hook', parent: 'foo' } as HookStats)
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
     })
 
-    it('should not end test onHookEnd if no suite', () => {
-        reporter['_allure'] = allureInstance({ suite: false })
-        reporter.onHookEnd({ title: 'foo', parent: 'bar' })
-
-        expect(endCase).toHaveBeenCalledTimes(0)
+    it('does not start test onHookStart if no suite', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onTestStart(testStart())
+        reporter.onHookStart({ cid: '0-0', title: 'foo', parent: 'foo' } as HookStats)
+        reporter.onHookEnd({ cid: '0-0', title: 'foo', parent: 'foo' } as HookStats)
+        reporter.onTestPass(testPassed())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results, containers } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        expect(results[0].name).toEqual('should can do something')
+        expect(containers).toHaveLength(0)
     })
 
-    it('should ignore mocha hook end if no test', () => {
-        reporter['_allure'] = allureInstance({ test: null })
-        reporter.onHookEnd({ title: 'foo', parent: 'bar' })
-
-        expect(endCase).toHaveBeenCalledTimes(0)
-        expect(endStep).toHaveBeenCalledTimes(0)
+    it('ignores global mocha/jasmine end hooks', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(suiteStart())
+        reporter.onHookEnd({ cid: '0-0', title: 'foo' } as HookStats)
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
     })
 
-    it('should ignore global mocha end hooks', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookEnd({ title: 'foo' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(0)
+    it('should not pop test case if no steps and before hook', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(testStart())
+        reporter.onTestStart(testStart())
+        reporter.onHookEnd({ cid: '0-0', title: '"before all" hook', parent: 'foo' } as HookStats)
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        expect(results[0].name).toEqual('should can do something')
+        expect(results[0].steps).toHaveLength(0)
     })
 
-    it('should not pop test case if no steps and before hook', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [] } })
-        reporter.onHookEnd({ title: '"before all" hook', parent: 'foo' })
-
-        expect(endCase).toHaveBeenCalledTimes(0)
-        expect(testcases).toHaveLength(1)
-    })
-
-    it('should pop test case if no steps and custom hook', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [] } })
-        reporter.onHookEnd({ title: 'bar', parent: 'foo' })
-
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(testcases).toHaveLength(0)
-    })
-
-    it('should keep passed hooks if there are some steps', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [1] } })
-        reporter.onHookEnd({ title: 'foo', parent: 'bar' })
-
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(endCase.mock.results[0].value).toBe('passed')
-        expect(testcases).toHaveLength(1)
-    })
-
-    it('should keep failed hooks if there no some steps', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [1] } })
-        reporter.onHookEnd({ title: '"after all" hook', parent: 'foo', error: { message: '', stack: '' } })
-
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(endCase.mock.results[0].value).toBe('broken')
-        expect(testcases).toHaveLength(1)
-    })
-
-    it('should keep failed hooks if there are some steps', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [1] } })
-        reporter.onHookEnd({ title: '"after all" hook', parent: 'foo', error: { message: '', stack: '' } })
-
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(endCase.mock.results[0].value).toBe('broken')
-        expect(testcases).toHaveLength(1)
-    })
-
-    it('should capture mocha each hooks end - passed', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookEnd({ title: '"after each" hook', parent: 'foo' })
-
-        expect(endCase).toHaveBeenCalledTimes(0)
-        expect(endStep).toHaveBeenCalledTimes(1)
-        expect(endStep.mock.results[0].value).toBe('passed')
-    })
-
-    it('should capture mocha each hooks end - failed', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookEnd({ title: '"before each" hook', parent: 'foo', error: { message: '', stack: '' } })
-
-        expect(endCase).toHaveBeenCalledTimes(0)
-        expect(endStep).toHaveBeenCalledTimes(1)
-        expect(endStep.mock.results[0].value).toBe('failed')
-    })
-
-    it('should ignore mocha all hooks if hook passes', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookStart({ title: '"after all" hook', parent: 'foo' })
-
-        expect(startCase).toHaveBeenCalledTimes(0)
-        expect(endCase).toHaveBeenCalledTimes(0)
-    })
-
-    it('should treat mocha all hooks as tests if hook throws', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookEnd({ title: '"before all" hook', parent: 'foo', error: { message: '', stack: '' } })
-
-        expect(startCase).toHaveBeenCalledTimes(1)
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(endCase.mock.results[0].value).toBe('broken')
+    it('should keep passed custom hooks if there are some steps', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(testStart())
+        reporter.onTestStart(testStart())
+        reporter.onHookStart({ cid: '0-0', title: '"after all" hook', parent: 'bar' } as HookStats)
+        reporter.onHookEnd({
+            cid: '0-0',
+            title: '"after all" hook',
+            parent: 'bar',
+            error: { message: '', stack: '' }
+        } as HookStats)
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results, containers } = getResults(outputDir)
+        const testResult = results.find(r => r.name === 'should can do something')!
+        expect(results).toHaveLength(1)
+        expect(testResult).toBeDefined()
+        expect(containers).toHaveLength(0)
+        expect(testResult.fixtures || []).toHaveLength(0)
     })
 })
 
 describe('hooks handling default', () => {
-    let reporter: any, startCase: any, endCase: any, startStep: any, endStep: any
-    const allureInstance = ({ suite = {}, test = { steps: [1] } }: any = {}) => ({
-        getCurrentSuite: jest.fn(() => suite),
-        getCurrentTest: jest.fn(() => { return test }),
-        startCase,
-        endCase,
-        startStep,
-        endStep
-    })
+    const outputDir = temporaryDirectory()
+    let reporter: any
 
     beforeEach(() => {
-        reporter = new AllureReporter({ disableMochaHooks: false })
-        reporter.onTestStart = jest.fn(test => startCase(test.title))
-        startCase = jest.fn()
-        endCase = jest.fn(result => result)
-        startStep = jest.fn()
-        endStep = jest.fn(result => result)
+        clean(outputDir)
+        reporter = new AllureReporter({ outputDir, disableMochaHooks: false })
     })
 
-    it('should capture mocha each hooks', () => {
-        reporter['_allure'] = allureInstance()
-        reporter.onHookStart({ title: '"before each" hook', parent: 'foo' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(1)
-    })
-
-    it('should not ignore mocha each hooks if no test', () => {
-        reporter['_allure'] = allureInstance({ test: null })
-        reporter.onHookStart({ title: '"after each" hook', parent: 'foo' })
-
-        expect(startStep).toHaveBeenCalledTimes(0)
-        expect(startCase).toHaveBeenCalledTimes(1)
-    })
-
-    it('should keep passed hooks if there are no steps (before/after)', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [] } })
-        reporter.onHookEnd({ title: '"before all" hook', parent: 'foo' })
-
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(testcases).toHaveLength(1)
-    })
-
-    it('should keep passed hooks if there are some steps', () => {
-        const testcases = [1]
-        reporter['_allure'] = allureInstance({ suite: { testcases }, test: { steps: [1] } })
+    it('does not report passed hooks if there are no tests', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart({ cid: cid(), title: 'SomeSuite' })
+        reporter.onHookStart({ title: 'foo', parent: 'bar' })
         reporter.onHookEnd({ title: 'foo', parent: 'bar' })
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        expect(() => getResults(outputDir)).toThrowError('ENOENT')
+    })
 
-        expect(endCase).toHaveBeenCalledTimes(1)
-        expect(testcases).toHaveLength(1)
+    it('reports passed hooks when a test has been started', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart({ cid: cid(), title: 'SomeSuite' })
+        reporter.onTestStart({ cid: cid(), title: 'SomeTest' })
+        reporter.onBeforeCommand({ command: 'SomeCommandStep' })
+        reporter.onHookStart({ title: 'foo', parent: 'bar' })
+        reporter.onHookEnd({ title: 'foo', parent: 'bar' })
+        reporter.onAfterCommand({ command: 'SomeCommandStep' })
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results, containers } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+
+        const testResult = results[0]
+        const beforeHooks = (testResult.fixtures || []).filter((f: any) => f.type === 'before')
+        expect(beforeHooks).toHaveLength(1)
+        expect(beforeHooks[0]).toEqual(expect.objectContaining({
+            name: 'foo',
+            status: Status.PASSED,
+            stage: Stage.FINISHED
+        }))
+    })
+
+    it('reports beforeAll, beforeEach, afterEach and afterAll in proper places', async () => {
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart({ cid: cid(), title: 'SomeSuite' })
+
+        reporter.onHookStart({ title: '"before all" hook', parent: 'SomeSuite' } as HookStats)
+        reporter.onHookEnd({ title: '"before all" hook', parent: 'SomeSuite' } as HookStats)
+
+        reporter.onTestStart({ cid: cid(), title: 'Test #1' })
+        reporter.onHookStart({ title: '"before each" hook', parent: 'SomeSuite' } as HookStats)
+        reporter.onHookEnd({ title: '"before each" hook', parent: 'SomeSuite' } as HookStats)
+        reporter.onTestPass(testPassed())
+        reporter.onHookStart({ title: '"after each" hook', parent: 'SomeSuite' } as HookStats)
+        reporter.onHookEnd({ title: '"after each" hook', parent: 'SomeSuite' } as HookStats)
+
+        reporter.onHookStart({ title: '"after all" hook', parent: 'SomeSuite' } as HookStats)
+        reporter.onHookEnd({ title: '"after all" hook', parent: 'SomeSuite' } as HookStats)
+
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+
+        const { results } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        const test = results[0]
+        const beforeCount = Array.isArray(test.fixtures) ? test.fixtures.filter((f: any) => f.type === 'before').length : 0
+        const afterCount = Array.isArray(test.fixtures) ? test.fixtures.filter((f: any) => f.type === 'after').length : 0
+        expect(beforeCount).toBeGreaterThanOrEqual(1)
+        expect(afterCount).toBeGreaterThanOrEqual(1)
+    })
+
+    it('attaches global beforeEach/afterEach emitted outside describe to the test', async () => {
+        reporter.onRunnerStart(runnerStart())
+
+        reporter.onHookStart({ cid: cid(), title: '"before each" hook', parent: '' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: '"before each" hook', parent: '' } as HookStats)
+
+        reporter.onSuiteStart(suiteStart())
+        reporter.onTestStart(testStart())
+        reporter.onTestPass(testPassed())
+
+        reporter.onHookStart({ cid: cid(), title: '"after each" hook', parent: '' } as HookStats)
+        reporter.onHookEnd({ cid: cid(), title: '"after each" hook', parent: '' } as HookStats)
+
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+
+        const { results } = getResults(outputDir)
+        expect(results).toHaveLength(1)
+        const test = results[0]
+        const beforeCount = Array.isArray(test.fixtures) ? test.fixtures.filter((f: any) => f.type === 'before').length : 0
+        const afterCount = Array.isArray(test.fixtures) ? test.fixtures.filter((f: any) => f.type === 'after').length : 0
+        expect(beforeCount).toBeGreaterThanOrEqual(1)
+        expect(afterCount).toBeGreaterThanOrEqual(1)
     })
 })
 
-describe('nested suite naming', () => {
-    it('should not end test if no hook ignored', () => {
-        const reporter = new AllureReporter()
-        const startSuite = jest.fn()
-        reporter['_allure'] = {
-            getCurrentSuite: jest.fn(() => { return { name: 'foo' } }),
-            startSuite
-        } as any
-        reporter.onSuiteStart({ title: 'bar' } as SuiteStats)
+describe('test step naming', () => {
+    const outputDir = temporaryDirectory()
+    let reporter: any
 
-        expect(startSuite).toHaveBeenCalledTimes(1)
-        expect(startSuite).toHaveBeenCalledWith('foo: bar')
+    beforeEach(() => {
+        clean(outputDir)
+        reporter = new AllureReporter({ outputDir, disableMochaHooks: false })
+    })
+
+    it('should display command name when both command name and enpoint are available ', async () => {
+        const command = { command: 'SomeCommandStep', method: 'POST', endpoint: '/session/:sessionId/element' }
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(testStart())
+        reporter.onTestStart(testStart())
+        reporter.onBeforeCommand(command)
+        reporter.onAfterCommand(command)
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerEnd())
+        const { results } = getResults(outputDir)
+        const testResult = results.find(r => r.name === 'should can do something')
+        expect(results).toHaveLength(1)
+        expect(testResult).not.toBeUndefined()
+        expect(testResult!.steps).toHaveLength(1)
+        expect(testResult!.steps[0].name).toBe('SomeCommandStep')
+    })
+
+    it('should display the endpoint and method in the absence of command name', async () => {
+        const command = { method: 'POST', endpoint: '/session/:sessionId/element' }
+        reporter.onRunnerStart(runnerStart())
+        reporter.onSuiteStart(testStart())
+        reporter.onTestStart(testStart())
+        reporter.onBeforeCommand(command as any)
+        reporter.onAfterCommand(command as any)
+        reporter.onTestPass(testPassed())
+        reporter.onSuiteEnd(suiteEnd())
+        await reporter.onRunnerEnd(runnerStart())
+        const { results } = getResults(outputDir)
+        const testResult = results.find(r => r.name === 'should can do something')
+        expect(results).toHaveLength(1)
+        expect(testResult).not.toBeUndefined()
+        expect(testResult!.steps).toHaveLength(1)
+        expect(testResult!.steps[0].name).toBe('POST /session/:sessionId/element')
     })
 })

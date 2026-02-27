@@ -1,7 +1,20 @@
-import { touchAction as touchActionCommand } from '../constant'
-import { TouchAction } from '../../types'
+import { touchAction as touchActionCommand } from '../constant.js'
+import type { TouchActions } from '../../types.js'
 
 /**
+ * :::caution Deprecation Warning
+ *
+ * The `touchAction` command is __deprecated__ and will be removed in a future version.
+ * We recommend to use the [`action`](/docs/api/browser/action) command instead with
+ * pointer type `touch`, e.g.:
+ *
+ * ```ts
+ * await browser.action('pointer', {
+ *   parameters: { pointerType: 'touch' }
+ * })
+ * ```
+ *
+ * :::
  *
  * The Touch Action API provides the basis of all gestures that can be automated in Appium.
  * It is currently only available to native apps and can not be used to interact with webapps.
@@ -17,18 +30,18 @@ import { TouchAction } from '../../types'
  *
  * <example>
     :touchAction.js
-    it('should do a touch gesture', function () {
-        const screen = $('//UITextbox');
+    it('should do a touch gesture', async () => {
+        const screen = await $('//UITextbox');
 
         // simple touch action on element
-        browser.touchAction({
+        await browser.touchAction({
             action: 'tap',
             element: screen
         });
 
         // simple touch action x y variables
         // tap location is 30px right and 20px down relative from the viewport
-        browser.touchAction({
+        await browser.touchAction({
             action: 'tap',
             x: 30,
             y:20
@@ -36,7 +49,7 @@ import { TouchAction } from '../../types'
 
         // simple touch action x y variables
         // tap location is 30px right and 20px down relative from the center of the element
-        browser.touchAction({
+        await browser.touchAction({
             action: 'tap',
             x: 30,
             y:20,
@@ -45,7 +58,7 @@ import { TouchAction } from '../../types'
 
         // multi action on an element
         // drag&drop from position 200x200 down 100px on the screen
-        browser.touchAction([
+        await browser.touchAction([
             { action: 'press', x: 200, y: 200 },
             { action: 'moveTo', x: 200, y: 300 },
             'release'
@@ -59,9 +72,9 @@ import { TouchAction } from '../../types'
  * @for android, ios
  *
  */
-export default function touchAction (
+export function touchAction (
     this: WebdriverIO.Browser,
-    ...args: TouchAction[]
-) {
-    return touchActionCommand.apply(this, args as any)
+    actions: TouchActions
+): Promise<void> {
+    return touchActionCommand.call(this, actions)
 }

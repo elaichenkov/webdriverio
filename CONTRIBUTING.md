@@ -8,13 +8,13 @@ Everyone who participates in this project, either as a user or a contributor, is
 
 ## Find A Way To Contribute
 
-The project offers a variety of ways to contribute. If you struggle to find something suited for you, join the WebdriverIO [support channel](https://gitter.im/webdriverio/webdriverio) on Gitter and reach out to the maintainer there. Don't be shy, they are there to help!
+The project offers a variety of ways to contribute. If you struggle to find something suited for you, join the WebdriverIO [support channel](https://discord.webdriver.io) on Matrix and reach out to the maintainer there. Don't be shy, they are there to help!
 
 You can participate by:
 
 - contributing code
 - improving documentation
-- help out in the [Gitter](https://gitter.im/webdriverio/webdriverio) support channel
+- answer questions and provide help in the [Discord](https://discord.webdriver.io) support channel
 - create educational content (blog posts, tutorials, videos, etc.)
 - spread the good word about the project (e.g. via Twitter)
 - create bugs if you discover them while using WebdriverIO
@@ -27,7 +27,51 @@ If you want to contribute code, a general good first way to find a task to work 
 
 Often issues require some amount of context to the problem which makes it difficult to get an idea about what needs to be done. Depending on your experience using / working with the project this context can be missing. Often it helps to start with tasks around missing documentation or just increase test coverage of some parts in the code. After some time you will get more familiar with the codebase which allows you to pick up more difficult tasks.
 
-If you can't find something that suits you, look into the [project roadmap](https://github.com/webdriverio/webdriverio/blob/main/ROADMAP.md) to see if there is something interesting for you. At the end you can also _always_ reach out to the maintainers in the [Gitter](https://gitter.im/webdriverio/webdriverio) support channel. They are responsible to find a task for you.
+If you can't find something that suits you, look into the [project roadmap](https://github.com/webdriverio/webdriverio/blob/main/ROADMAP.md) to see if there is something interesting for you. At the end you can also _always_ reach out to the maintainers in the [Discord](https://discord.webdriver.io) support channel. They are responsible to find a task for you.
+
+## Reporting New Issues
+
+When [opening a new issue](https://github.com/webdriverio/webdriverio/issues/new/choose), always make sure to fill out the issue template. __This step is very important!__ Not doing so may result in your issue not managed in a timely fashion. Don't take this personally if this happens, and feel free to open a new issue once you've gathered all the information required by the template.
+
+- __One issue, one bug:__ Please report a single bug per issue.
+- __Provide reproduction steps:__ List all the steps necessary to reproduce the issue. The person reading your bug report should be able to follow these steps to reproduce your issue with minimal effort.
+
+### Providing a reproducible example
+
+A reproducible example is a simple, self-contained script or program that demonstrates the issue or bug you're experiencing. The goal is to allow others to recreate the problem easily and efficiently.
+
+Steps to Create a Reproducible Example:
+
+1. Isolate the Problem:
+- Narrow down your code to the smallest amount that still reproduces the issue.
+- Remove any non-essential code or dependencies that are not related to the problem.
+
+2. Ensure that others can run your example and reproduce the issue:
+- It should not require any non-standard setup unless absolutely necessary, e.g. remove any need for special software or services like CI vendors.
+- Document steps necessary to execute the reproducible example
+
+3. Share project
+- Create a new public GitHub repository and push your reproducible example to it.
+- Share the link to the repository in the issue.
+- Document what behavior you observe and what behavior you would expect
+
+__Note:__ if you can't provide a reproducible example we unfortunately are forced to close the issue.
+
+### Security Bugs
+
+See [SECURITY.md](https://github.com/webdriverio/webdriverio/blob/main/.github/SECURITY.md).
+
+## Flowcharts
+
+The flowcharts provide a high level overview of the WebdriverIO ecosystem and how the different packages interact with each other.
+
+[WDIO Commands](https://webdriver.io/docs/flowcharts/wdiocommands) - Explains the wdio config, install and repl command workflows.
+
+[Create local worker process](https://webdriver.io/docs/flowcharts/createlocalworkerprocess) - Explains the interaction between the @wdio/cli, @wdio/local-runner and @wdio/runner packages and how a worker process is created.
+
+[Test execution](https://webdriver.io/docs/flowcharts/testexecution) - Overview of how the tests are run in the local runner worker process.
+
+[High level overview](https://webdriver.io/docs/flowcharts/highleveloverview) - Flow chart provides a high level overview of how the WebdriverIO ecosystem interacts with the core packages.
 
 ## Proposing a Change
 
@@ -35,13 +79,13 @@ We are happy for every idea you have that improves the usability of the framewor
 
 If you’re only fixing a bug, it’s fine to submit a pull request right away, but we still recommend to file an issue detailing what you’re fixing. This is helpful in case we don’t accept that specific fix but want to keep track of the issue.
 
-## Work With The Code
+### Work With The Code
 
-If you make any changes to the code, you want to test it quickly to see if they do what you expect. There are a couple of ways to do that in WebdriverIO. For one, you can link single sub-packages into your own project to see if the changes you've made have the effect you expected. Find a guide on how to [link changes to your current project](https://github.com/webdriverio/webdriverio/blob/main/CONTRIBUTING.md#link-changes-to-your-current-project) in our contributing guide.
+If you make any changes to the code, you want to test it quickly to see if they do what you expect. There are a couple of ways to do that in WebdriverIO. For one, you can link single sub-packages into your own project to see if the changes you've made have the effect you expected.
 
-Another way to test changes in WebdriverIO is by using its [example directory](https://github.com/webdriverio/webdriverio/tree/main/examples) or by running its [smoke test suite](https://github.com/webdriverio/webdriverio/tree/main/tests). The example directory is a set of sample scripts that use WebdriverIO in various of ways. Here, you need to have a browser driver running to run the scripts. With the smoke test suite you can run various flavors of WebdriverIO within a predefined execution scenario. All of these scenarios are defined in our [WebDriver Mock Service](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-webdriver-mock-service) that mimics a browser driver by stubbing the endpoints with predefined responses. It is a great way to run WebdriverIO suites quickly without having to setup anything.
+Another way to test changes in WebdriverIO is by using its [example directory](https://github.com/webdriverio/webdriverio/tree/main/examples) or by running its [smoke test suite](https://github.com/webdriverio/webdriverio/tree/main/tests). The example directory is a set of sample scripts that use WebdriverIO in various ways. Here, you need to have a browser driver running to run the scripts. With the smoke test suite you can run various flavors of WebdriverIO within a predefined execution scenario. All of these scenarios are defined in our [WebDriver Mock Service](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-webdriver-mock-service) that mimics a browser driver by stubbing the endpoints with predefined responses. It is a great way to run WebdriverIO suites quickly without having to setup anything.
 
-## Make a Pull Request
+### Make a Pull Request
 
 Once you have a fix implemented or finished a feature implementation you can make a pull request. Your changes needs to be pushed on your WebdriverIO fork. In the GitHub UI you should see a button popping up that allows you to raise a PR to the main repository.
 
@@ -51,9 +95,9 @@ Like in many Open Source projects we ask you to sign a __CLA__ which is a Contri
 
 The WebdriverIO maintainer will review your pull request as soon as possible. They will then either approve and merge your changes, request modifications or close with an explanation.
 
-## Set Up Project
+#### Set Up Project
 
-In order to set up this project and start contributing follow this step by step guide:
+You can immediately start working on the code using [a pre-setup Gitpod environment](https://gitpod.io/#https://github.com/webdriverio/webdriverio) (read more on this [here](https://bromann.dev/post/development-environment-for-webdriverio/)). If you like to develop on the project locally follow this step by step guide:
 
 * Fork the project.
 * Clone the project somewhere on your computer
@@ -70,62 +114,77 @@ In order to set up this project and start contributing follow this step by step 
 
 * If you need to update your fork you can do so following the steps [here](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/syncing-a-fork)
 
-* Switch to Node v14 LTS (you should be able to use older/newer versions of Node but we recommend to use v14 LTS so all developers are on the same side). We recommend to use [`nvm`](https://github.com/nvm-sh/nvm) to switch between Node.js versions.
+* Switch to the most recent Node LTS (you should be able to use older/newer versions of Node but we recommend to use v20 LTS so all developers are on the same side) or to the one denoted in `.nvmrc`. We recommend to use [`nvm`](https://github.com/nvm-sh/nvm) to switch between Node.js versions.
+
+* Install Chrome, Firefox and Edge (required for running the e2e tests)
 
 * Set up the project:
+    First make sure you have the right Node.js version installed.
+    You can find the current defined development version in `.nvmrc` within the root directory of the project. The easiest way to handle multiple Node.js versions is by using [NVM](https://github.com/nvm-sh/nvm).
+    Once NVM is set up, use it to install the required Node.js version:
+    ```sh
+    $ nvm install
+    ```
+    Next, install [`pnpm`](https://www.npmjs.com/package/pnpm) globally:
+    ```sh
+    $ npm install -g pnpm
+    ```
+
+    Finally, set up the project via:
 
     ```sh
-    $ npm install
-    $ npm run setup-full
+    $ pnpm install
+    $ pnpm run setup
     ```
 
     The second command does two things:
 
-    * Bootstraps sub-projects via ```npm run bootstrap```
+    * Cleans (possible) existing build artifacts via ```pnpm run clean```
 
-        Many packages depend on each other, in order to properly set up the dependency tree you need to run the [Lerna Bootstrap](https://github.com/lerna/lerna#bootstrap) command to create all necessary links. As this project also does some other house keeping tasks, it is recommended to use the package bootstrap command.
+        If you have compiled the code this command will remove them as well as all dependencies of the subpackages.
 
-    * Builds all subpackages via ```npm run build```
+    * Compiles the project ```pnpm run compile:all```
 
-        As the last step you need to build all sub-packages in order to resolve the internal dependencies. WebdriverIO uses [TypeScript](https://www.typescriptlang.org/) as a compiler. We are currently transitioning to TypeScript so you will see a mixture of normal JS files and TypeScript files.
+        As the last step you need to build all sub-packages in order to resolve the internal dependencies. WebdriverIO uses [`@wdio/compiler`](https://github.com/webdriverio/webdriverio/tree/main/infa/compiler) which is an internal package that uses Esbuild to compile the project.
 
 * Run Tests to ensure that everything is set up correctly
 
     ```sh
-    $ npm run test
+    # run the complete unit test suite
+    $ pnpm test
 
     # run test for a specific sub project (e.g. webdriver)
-    $ npx jest ./packages/webdriver/tests --collectCoverage=false
+    $ npx vitest ./packages/webdriver/tests
     ```
 
     It should give you a passing result. Now you can move on to set up your development environment and start working on some code. If tests do not pass please create an issue and provide logs to the error.
 
-## Work On Packages
+#### Work On Packages
 
 If you start making changes to specific packages, make sure you listen to file changes and transpile the code every time you press save. To do that for all packages, run:
 
 ```sh
-$ npm run watch
+pnpm run dev
 ```
 
 If you only work on a single package, you can watch only for that one by calling:
 
 ```sh
-# e.g. `$ npm run watch wdio-runner`
-$ npm run watch <package-name>
+# e.g. `$ pnpm run dev wdio-runner`
+$ pnpm run dev <package-name>
 ```
 
-It is also a good idea to run jest in watch mode while developing on a single package to see if changes affect any tests:
+It is also a good idea to run vitest in watch mode while developing on a single package to see if changes affect any tests:
 
 ```sh
-$ npx jest ./packages/<package-name>/tests --watch --collectCoverage=false
+npx vitest ./packages/<package-name>/tests
 ```
 
-## TypeScript Definitions
+#### TypeScript Definitions
 
 WebdriverIO uses TypeScript to ensure that code is statically typed and common mistakes misusing them are avoided. If you are new to TypeScript have a look at [these awesome essential resources](https://github.com/dzharii/awesome-typescript#awesome-typescript-essential-resources) to get started with it.
 
-provides its own type definitions for projects that use TypeScript. Given the large amount of commands it would make it unmaintainable to __not__ automate the process of generating these. However there are certain edge cases where manual work is required.
+WebdriverIO provides its own type definitions for projects that use TypeScript. Given the large amount of commands it would make it unmaintainable to __not__ automate the process of generating these. However there are certain edge cases where manual work is required.
 
 All type definitions are generated by the TypeScript compiler. There are some essential packages for that:
 
@@ -133,26 +192,20 @@ All type definitions are generated by the TypeScript compiler. There are some es
 - the `@wdio/protocol` package defines all protocol commands, their function parameters and return types
 - all other types should be defined in the package where they are used, here we tend to have general types defined in a `types.ts` file
 
-You can find all files responsible for the generating the typings [here](https://github.com/webdriverio/webdriverio/tree/main/scripts/type-generation). You can trigger the process by calling:
+The protocol types are generated as part of the `@wdio/compiler` build command and is part of the [`generate-types`](https://github.com/webdriverio/webdriverio/blob/main/infra/compiler/src/type-generation/index.ts#L27-L35) plugin.
 
-```sh
-$ npm run generate:typings
-```
-
-This will run the scripts in the directory shown above and generate the typings for all protocol commands. Whenever you change those [protocol commands](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-protocols/protocols), make sure you re-generate the types with the command shown above.
-
-## Test Changes
+### Test Changes
 
 For the development on the WebdriverIO code base you can use examples files that have been created by the maintainers in the [examples directory](https://github.com/webdriverio/webdriverio/tree/main/examples). They cover various use cases and are setup so that they a run with the code from the repository. Let's say you make changes to the WDIO testrunner and want to see if they are applied correctly you can just run the testrunner examples by calling:
 
 ```sh
-$ cd ./examples/wdio
-$ npm run test:mocha
+cd ./examples/wdio
+$ pnpm run test:mocha
 ```
 
-This will run a simple test suite using the testrunner with Mochajs. There are similar examples for other frameworks, custom services and reporters as well as using the devtools protocol as automation engine. Feel free to add examples if they help testing features you are working on.
+This will run a simple test suite using the testrunner with Mochajs. There are similar examples for other frameworks, custom services and reporters as well as using the devtools protocol as the automation engine. Feel free to add examples if they help testing features you are working on.
 
-### Test Pipeline
+#### Test Pipeline
 
 When a PR gets submitted, WebdriverIO runs the following checks:
 
@@ -160,27 +213,27 @@ When a PR gets submitted, WebdriverIO runs the following checks:
   We automatically check if every sub-package has all the dependencies from its `package.json` installed.
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:depcheck
+  $ pnpm run test:depcheck
   ```
 - *ESLint*
   A common ESLint test to align code styles and detect syntax errors early.
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:eslint
+  $ pnpm run test:eslint
   ```
 - *TypeScript Definition Tests*
   As we generate our type definitions, we want to be cautious that the generated definitions actually define the interface as expected. Read more
   on that at [Testing Type Definitions](#testing-type-definitions).
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:typings
+  $ pnpm run test:typings
   ```
 - *Unit Tests*
   Like every project we unit-test our code and ensure that new patches are properly tested. The coverage threshold is pretty high so ensure that
-  your changes cover all necessary code paths. We are using [Jest](https://jestjs.io/) as a unit test framework here.
+  your changes cover all necessary code paths. We are using [Vitest](https://vitest.dev/) as a unit test framework here.
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:coverage
+  $ pnpm run test:unit
   ```
 - *Smoke Tests*
   While unit tests already cover a lot of cases, we run in addition to that smoke tests that simulate test scenarios which are difficult to test
@@ -188,21 +241,18 @@ When a PR gets submitted, WebdriverIO runs the following checks:
   test retries or failure handling. Smoke tests run actual e2e tests where the driver is being stubbed (via [`@wdio/smoke-test-service`](https://github.com/webdriverio/webdriverio/blob/main/packages/wdio-smoke-test-service/package.json)) to return fake results.
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:smoke
+  $ pnpm run test:smoke
   ```
 - *e2e Tests*
-  Last but not least, we run actual e2e tests with a real browser to ensure that our WebDriver DevTools implementation is working as expected. These
-  tests spin up headless Chrome and Firefox browsers to test the commands implemented in the `devtools` package. Given that the WebDriver functionality
-  is already tested with [WPT](https://github.com/web-platform-tests/wpt), we don't need to do it there.
-  In order to run these tests, an installation of [Firefox Nightly](https://www.mozilla.org/en-US/firefox/channel/desktop/#nightly) and [Google Chrome](https://www.google.com/chrome/) is required.
+  Last but not least, we run actual e2e tests with a real headless browser to ensure we can spin up tests in all support variants and that certain services from end to end.
   You can manually trigger this check by calling:
   ```sh
-  $ npm run test:e2e
+  $ pnpm run test:e2e
   ```
 
-### Unit Tests
+#### Unit Tests
 
-The project tries to keep a high test coverage to ensure that changes to code are intentional and well thought through. Therefor "normally" there is a unit test file for every code file, located in a test directory. For example the unit tests for:
+The project tries to keep a high test coverage to ensure that changes to code are intentional and well thought through. Therefore "normally" there is a unit test file for every code file, located in a test directory. For example the unit tests for:
 
 ```
 packages/webdriverio/src/commands/element/getCSSProperty.ts
@@ -214,43 +264,43 @@ are located in
 packages/webdriverio/tests/commands/element/getCSSProperty.test.ts
 ```
 
-If that is not the case the functionality of that file might be tested through a different file. We recommend to write unit tests for every new function being written in the code base. We advise to mock out every dependency to either other packages or modules using [Jests mock capabilities](https://jestjs.io/docs/manual-mocks).
+If that is not the case the functionality of that file might be tested through a different file. We recommend to write unit tests for every new function being written in the code base. We advise to mock out every dependency to either other packages or modules using [Vitests mock capabilities](https://vitest.dev/guide/mocking.html).
 
 During development it makes sense to focus running unit tests for a single file rather the whole code base. For example if you work on the `getCSSProperty` command it makes sense to run only the unit test for that specific command by calling:
 
 ```sh
-$ npx jest packages/webdriverio/tests/commands/element/getCSSProperty.test.ts --watch --collectCoverage=false
+npx vitest packages/webdriverio/tests/commands/element/getCSSProperty.test.ts
 ```
 
 With the `--watch` flag the unit tests will be re-run as soon as you change something within the file.
 
-### Run e2e Experience With Smoke Tests
+#### Run e2e Experience With Smoke Tests
 
 WebdriverIO maintains a set of smoke test suites that allows to represent the full e2e experience of a user running the wdio testrunner. It is set up in a way so it doesn't require an actual browser driver since all requests are mocked using the [`@wdio/webdriver-mock-service`](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-webdriver-mock-service). This offers you an opportunity to run a wdio test suite without setting up a browser driver and a test page. You can run all smoke tests via:
 
 ```sh
-$ npm run test:smoke
+pnpm run test:smoke
 ```
 
 There is one [`smoke.runner.js`](https://github.com/webdriverio/webdriverio/blob/main/tests/smoke.runner.js) file that triggers all tests. It contains several [test suites](https://github.com/webdriverio/webdriverio/blob/main/tests/smoke.runner.js#L365-L384) defined that run in different environments, e.g. Mocha, Jasmine and Cucumber. You can run a specific test suite by calling, e.g.:
 
 ```sh
-$ npm run test:smoke mochaTestrunner
+pnpm run test:smoke mochaTestrunner
 ```
 
 Every of these test suites are functions that trigger the wdio testrunner programmatically using the [`launch`](https://github.com/webdriverio/webdriverio/blob/main/tests/helpers/launch.js) helper method. All you need to pass in is a path to your config file and with what you want to overwrite the config. Most of the smoke test use a [common config file](https://github.com/webdriverio/webdriverio/blob/main/tests/helpers/config.js) and overwrite properties specific for their use case.
 
 If you test custom WebDriver commands, you can define your own scenario of mock responses in the [`@wdio/webdriver-mock-service`](https://github.com/webdriverio/webdriverio/blob/main/packages/wdio-webdriver-mock-service/src/index.js#L136-L147).
 
-### Testing Type Definitions
+#### Testing Type Definitions
 
 To make sure that we don't accidentally change the types and cause users' test to break, we run some simple TypeScript checks. You can run all the type definition tests by running:
 
 ```sh
-$ npm run test:typings
+pnpm run test:typings
 ```
 
-This will run all the tests for all the type definitions WebdriverIO provides. These tests just check if TypeScript can compile them according to the generated type definitions. All the type checks are located in `/webdriverio/tests/typings`. If you extend a WebdriverIO command or interfaces for other type definitions, please ensure that you have used it in these files. The directory contains tests for the asynchronous usage of WebdriverIO as well as for using it synchronously with `@wdio/sync`.
+This will run all the tests for all the type definitions WebdriverIO provides. These tests just check if TypeScript can compile them according to the generated type definitions. All the type checks are located in `/webdriverio/tests/typings`. If you extend a WebdriverIO command or interfaces for other type definitions, please ensure that you have used it in these files. The directory contains tests for the asynchronous usage of WebdriverIO.
 
 For example, to test the `touchActions` properties, we have it tested in `/tests/typings/webdriverio/async.ts`:
 
@@ -290,7 +340,7 @@ This repository contains everything to set up, build and deploy the WebdriverIO 
 - the guidelines pages from markdown files of the [docs directory](https://github.com/webdriverio/webdriverio/tree/main/website/docs)
 - service and reporter docs from the readme files of those packages within this repository
 - service and reporter docs from 3rd party plugins (defined in [these JSON files](https://github.com/webdriverio/webdriverio/tree/main/scripts/docs-generation/3rd-party)) that are downloaded from GitHub and parsed
-- the protocol APIs from the [`@wdio/protocols`](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-protocols/protocols) package
+- the protocol APIs from the [`@wdio/protocols`](https://github.com/webdriverio/webdriverio/tree/main/packages/wdio-protocols/src/protocols) package
 - the WebdriverIO API that is parsed out of the JSDoc comments of individual commands (e.g., [`execute`](https://github.com/webdriverio/webdriverio/blob/main/packages/webdriverio/src/commands/browser/execute.ts#L3-L37) command)
 
 Changes to the docs need to be done in one of these places. Please note that changes to e.g. the config file have to be updated in multiple places given that config files are wide spread (as examples or test files) within this repository. A good way to go about this is to look for all occurrences of a certain string of the config and update changes in all findings.
@@ -300,14 +350,14 @@ Changes to the docs need to be done in one of these places. Please note that cha
 After you have [set up the project](https://github.com/webdriverio/webdriverio/blob/main/CONTRIBUTING.md#set-up-project) you can go into the `website` directory to set up the docs page and run it on your local machine. To do so, run:
 
 ```sh
-$ cd website
-$ npm install
-$ npm start
+cd website
+$ pnpm install
+$ pnpm start
 ```
 
-This will set up everything needed to run the page on [`localhost:3000`](http://localhost:3000/). If you need to run on a different host or port, pass them as additional arguments to npm start, like `-- --host 0.0.0.0`.
+This will set up everything needed to run the page on [`localhost:3000`](http://localhost:3000/). If you need to run on a different host or port, pass them as additional arguments to pnpm start, like `-- --host 0.0.0.0`.
 
-You can now modify the content of the [`/website/docs`](https://github.com/webdriverio/webdriverio/tree/main/website/docs) files as well as change styles and templates. The page will be automatically updated. If you add documentation in other places, you have to rerun the `npm start` script to re-generate the docs.
+You can now modify the content of the [`/website/docs`](https://github.com/webdriverio/webdriverio/tree/main/website/docs) files as well as change styles and templates. The page will be automatically updated. If you add documentation in other places, you have to rerun the `pnpm start` script to re-generate the docs.
 
 ### Deploying the Documentation in Production
 
@@ -318,7 +368,7 @@ Every time a new release is pushed to GitHub the WebdriverIO docs need to be bui
 All WebdriverIO sub packages require a certain structure to work within the wdio ecosystem. To simplify the process of creating a new sub package, we built an NPM script that does all the boilerplate work for you. Just run:
 
 ```sh
-$ npm run create
+pnpm run create
 ```
 
 It will ask you about the type and name of the new package and create all the files for you.
@@ -336,7 +386,7 @@ Everyone triaging or reviewing a PR should label it with `backport-requested` if
 Once a PR with a `backport-requested` label got merged, you are responsible for backporting the patch to the older version. To do so, pull the latest code from GitHub:
 
 ```sh
-$ git pull
+git pull
 $ git fetch --all
 $ git checkout v6
 ```
@@ -344,13 +394,13 @@ $ git checkout v6
 Before you can start, please export an `GITHUB_AUTH` token into your environment in order to allow the executing script to fetch data about pull requests and set proper labels. Go to your [personal access token](https://github.com/settings/tokens) settings page and generate such a token with only having the `public_repo` field enabled. Then export it into your environment and run the backport script. It fetches all commits connected with PRs that are labeled with `backport-requested` and cherry-picks them into the maintenance branch. Via an interactive console you can get the chance to review the PR again and whether you want to backport it or not. To start the process, just execute:
 
 ```sh
-$ npm run backport
+pnpm run backport
 ```
 
 If during the process a cherry-pick fails, you can always abort and manually troubleshoot. If you are not able to resolve the problem, create an issue in the repo and include the author of that PR. A successful backport of two PRs will look like this:
 
 ```
-$ npm run backport
+$ pnpm run backport
 
 > webdriverio-monorepo@ backport /path/to/webdriverio/webdriverio
 > node ./scripts/backport.js
@@ -374,7 +424,7 @@ Successfully backported 2 PRs 👏!
 Please now push them to `v6` and make a new v6.x release!
 ```
 
-You can always reach out to the `webdriverio/ProjectCommitters` channel on Gitter for questions.
+You can always reach out to the `webdriverio/ProjectCommitters` channel on Matrix for questions.
 
 ## Release New Version
 
@@ -384,7 +434,7 @@ Package releases are made using Lerna's release capabilities as GitHub workflow 
 - __Minor Release__: minor releases are always required if a new, user focused feature was added to one of the packages. For example, if a command was added to WebdriverIO or if a service provides a new form of integration, a minor version bump would be appropriate. However if an internal package like `@wdio/local-runner` exposes a new interface that is solely used internally, we can consider that as a patch release.
 - __Patch Release__: every time a bug is fixed, documentation (this includes TypeScript definitions) gets updated or existing functionality is improved, we should do a patch release.
 
-If you are unsure about which release type to pick, reach out in the TSC Gitter channel. By setting an NPM tag you can also release a current version with e.g. a `next` tag to test changes before we roll them out to all users.
+If you are unsure about which release type to pick, reach out in the `webdriverio/TSC` Matrix channel. By setting an NPM tag you can also release a current version with e.g. a `next` tag to test changes before we roll them out to all users.
 
 ## Workshop
 

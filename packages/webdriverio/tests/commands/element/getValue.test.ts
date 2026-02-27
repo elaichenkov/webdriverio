@@ -1,15 +1,17 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, beforeEach, vi } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('getValue', () => {
     beforeEach(() => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
     })
 
-    test('should get the value using getElementProperty', async () => {
+    it('should get the value using getElementProperty', async () => {
         const browser = await remote({
             baseUrl: 'http://foobar.com',
             capabilities: {
@@ -20,23 +22,9 @@ describe('getValue', () => {
         const elem = await browser.$('#foo')
 
         await elem.getValue()
-        expect(got.mock.calls[2][0].pathname)
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0].pathname)
             .toBe('/session/foobar-123/element/some-elem-123/property/value')
-    })
-
-    test('should get the value using getElementAttribute', async () => {
-        const browser = await remote({
-            baseUrl: 'http://foobar.com',
-            capabilities: {
-                browserName: 'foobar-noW3C'
-            }
-        })
-
-        const elem = await browser.$('#foo')
-
-        await elem.getValue()
-        expect(got.mock.calls[2][0].pathname)
-            .toBe('/session/foobar-123/element/some-elem-123/attribute/value')
     })
 
     it('should get value in mobile mode', async () => {
@@ -46,12 +34,14 @@ describe('getValue', () => {
                 browserName: 'foobar',
                 // @ts-ignore mock feature
                 mobileMode: true
-            }
+            } as any
         })
         const elem = await browser.$('#foo')
 
         await elem.getValue()
-        expect(got.mock.calls[2][0].pathname)
+        // Due to mobileMode being enabled we will have extra calls to fetch
+        // @ts-expect-error mock implementation
+        expect(vi.mocked(fetch).mock.calls[2][0].pathname)
             .toBe('/session/foobar-123/element/some-elem-123/attribute/value')
     })
 })

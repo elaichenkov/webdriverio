@@ -1,5 +1,7 @@
-import ProtocolStub from '../src/protocol-stub'
-import Multiremote from '../src/multiremote'
+import { describe, expect, it, vi } from 'vitest'
+
+import ProtocolStub from '../src/protocol-stub.js'
+import Multiremote from '../src/multiremote.js'
 
 describe('reloadSession', () => {
     it('should throw', () => {
@@ -17,44 +19,47 @@ describe('newSession', () => {
                 foo: 'bar'
             }
         })
-        expect(Object.keys(session)).toHaveLength(8)
+        expect(Object.keys(session)).toHaveLength(21)
         expect(session.isAndroid).toBe(false)
         expect(session.isChrome).toBe(false)
+        expect(session.isChromium).toBe(false)
+        expect(session.isFirefox).toBe(false)
         expect(session.isIOS).toBe(true)
         expect(session.isMobile).toBe(true)
         expect(session.isSauce).toBe(false)
+        expect(session.isBidi).toBe(false)
+        expect(session.isWindowsApp).toBe(false)
+        expect(session.isMacApp).toBe(false)
         expect(session.capabilities).toEqual({
             deviceName: 'Some Device',
             platformName: 'iOS',
             foo: 'bar'
         })
-        expect(() => session.addCommand()).toThrow()
-        expect(() => session.overwriteCommand()).toThrow()
     })
 })
 
 describe('attachToSession', () => {
-    it('should return newSession if not multiremote', async () => {
-        const modifier = jest.fn()
-        const session = await ProtocolStub.attachToSession({
+    it('should throw if not multiremote', async () => {
+        const modifier = vi.fn()
+        expect(() => ProtocolStub.attachToSession({
             sessionId: '1234',
             capabilities: { browserName: 'chrome' }
-        }, modifier)
+        } as never, modifier)).toThrow()
         expect(modifier).not.toBeCalled()
-        expect(session.isChrome).toBe(true)
     })
 
     it('should return newSession if modifier was not passed', async () => {
-        const session = await ProtocolStub.attachToSession({ sessionId: '1234' })
-        expect(session.capabilities).toEqual({})
+        expect(() => ProtocolStub.attachToSession({ sessionId: '1234' } as never))
+            .toThrow()
     })
 
     it('should call modifier if multiremote', async () => {
         const multiremote = new Multiremote()
         // @ts-ignore test scenario
-        multiremote.instances['instanceName'] = 'instance'
+        multiremote.instances.instanceName = 'instance'
 
         const session = await ProtocolStub.attachToSession(
+            // @ts-expect-error
             undefined,
             multiremote.modifier.bind(multiremote)
         )

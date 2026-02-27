@@ -1,14 +1,13 @@
-import { basename, join, resolve } from 'path'
-import { paramCase } from 'param-case'
-
-import { ArgValue, KeyValueArgs } from './types'
+import { basename, join, resolve } from 'node:path'
+import { kebabCase } from 'change-case'
+import type { ArgValue, KeyValueArgs } from './types.js'
 
 const FILE_EXTENSION_REGEX = /\.[0-9a-z]+$/i
 
 /**
  * Resolves the given path into a absolute path and appends the default filename as fallback when the provided path is a directory.
- * @param  {String} filePath         relative file or directory path
- * @param  {String} defaultFilename default file name when filePath is a directory
+ * @param  {string} filePath         relative file or directory path
+ * @param  {string} defaultFilename default file name when filePath is a directory
  * @return {String}                 absolute file path
  */
 export function getFilePath (filePath: string, defaultFilename: string): string {
@@ -23,20 +22,24 @@ export function getFilePath (filePath: string, defaultFilename: string): string 
     return absolutePath
 }
 
-export function formatCliArgs(args: KeyValueArgs | ArgValue[]): string[] {
-    if (Array.isArray(args)) {
-        return args.map(arg => sanitizeCliOptionValue(arg))
-    }
-
+export function formatCliArgs(args: KeyValueArgs): string[] {
     const cliArgs = []
     for (const key in args) {
-        let value: ArgValue | ArgValue[] = args[key]
+        const value: ArgValue = args[key]
         // If the value is false or null the argument is discarded
         if ((typeof value === 'boolean' && !value) || value === null) {
             continue
         }
 
-        cliArgs.push(`--${paramCase(key)}`)
+        /**
+         * there are some special options that should not be transformed
+         */
+        if (key === 'chromedriver_autodownload') {
+            cliArgs.push(key)
+            continue
+        }
+
+        cliArgs.push(`--${kebabCase(key)}`)
         // Only non-boolean and non-null values are added as option values
         if (typeof value !== 'boolean') {
             cliArgs.push(sanitizeCliOptionValue(value))
@@ -46,7 +49,7 @@ export function formatCliArgs(args: KeyValueArgs | ArgValue[]): string[] {
 }
 
 export function sanitizeCliOptionValue (value: ArgValue) {
-    const valueString = String(value)
+    const valueString = typeof value === 'object' ? JSON.stringify(value) : String(value)
     // Encapsulate the value string in single quotes if it contains a white space
     return /\s/.test(valueString) ? `'${valueString}'` : valueString
 }

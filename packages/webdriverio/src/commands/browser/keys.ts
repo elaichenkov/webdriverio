@@ -1,68 +1,62 @@
-import { checkUnicode } from '../../utils'
-import { UNICODE_CHARACTERS } from '../../constants'
+import type { UNICODE_CHARACTERS } from '@wdio/utils'
+
+import { checkUnicode } from '../../utils/index.js'
 
 /**
  *
- * Send a sequence of key strokes to the active element. You can also use characters like
- * "Left arrow" or "Back space". WebdriverIO will take care of translating them into unicode
- * characters. You’ll find all supported characters [here](https://w3c.github.io/webdriver/webdriver-spec.html#keyboard-actions).
- * To do that, the value has to correspond to a key from the table.
+ * Send a sequence of key strokes to the "active" element. You can make an input element active by just clicking
+ * on it. To use characters like "Left arrow" or "Back space", import the `Key` object from the WebdriverIO package.
  *
- * Modifier like Ctrl, Shift, Alt and Meta will stay pressed so you need to trigger them again to release them.
- * Modifiying a click however requires you to use the WebDriver Actions API through the [performActions](https://webdriver.io/docs/api/webdriver#performactions) method.
+ * Modifier like `Control`, `Shift`, `Alt` and `Command` will stay pressed throughout the sequence and will be released
+ * at the end. Modifying a click requires you to use the WebDriver Actions API through the
+ * [performActions](https://webdriver.io/docs/api/webdriver#performactions) method.
  *
- * <example>
-    :keys.js
-    it('copies text out of active element', () => {
-        // copies text from an input element
-        const input = $('#username')
-        input.setValue('anonymous')
-
-        browser.keys(['Meta', 'a'])
-        browser.keys(['Meta', 'c'])
-    });
- * </example>
+ * :::info
+ *
+ * Control keys differ based on the operating system the browser is running on, e.g. MacOS: `Command` and Windows: `Control`.
+ * WebdriverIO provides a cross browser modifier control key called `Ctrl` (see example below).
+ *
+ * :::
  *
  * @param {String|String[]} value  The sequence of keys to type. An array or string must be provided.
  * @see https://w3c.github.io/webdriver/#dispatching-actions
+ * @example https://github.com/webdriverio/example-recipes/blob/355434bdef13d29608d6d5fbfbeaa034c8a2aa74/keys/keys.js#L1-L17
  *
  */
-export default function keys (
+export async function keys (
     this: WebdriverIO.Browser,
     value: string | string[]
-) {
+): Promise<void> {
     let keySequence: string[] = []
 
     /**
      * replace key with corresponding unicode character
      */
     if (typeof value === 'string') {
-        keySequence = checkUnicode(value as keyof typeof UNICODE_CHARACTERS, this.isDevTools)
+        keySequence = checkUnicode(value as keyof typeof UNICODE_CHARACTERS)
     } else if (Array.isArray(value)) {
-        const charArray: (keyof typeof UNICODE_CHARACTERS)[] = value as any
+        const charArray = value as (keyof typeof UNICODE_CHARACTERS)[]
         for (const charSet of charArray) {
-            keySequence = keySequence.concat(checkUnicode(charSet, this.isDevTools))
+            keySequence = keySequence.concat(checkUnicode(charSet))
         }
     } else {
         throw new Error('"keys" command requires a string or array of strings as parameter')
     }
 
     /**
-     * JsonWireProtocol action
-     */
-    if (!this.isW3C) {
-        return this.sendKeys(keySequence)
-    }
-
-    /**
      * W3C way of handle it key actions
      */
-    const keyDownActions = keySequence.map((value) => ({ type: 'keyDown', value }))
-    const keyUpActions = keySequence.map((value) => ({ type: 'keyUp', value }))
+    const keyAction = this.action('key')
+    keySequence.forEach((value) => keyAction.down(value))
+    /**
+     * XCTest API only allows to send keypresses (e.g. keydown+keyup).
+     * There is no way to "split" them
+     */
+    if (!this.isIOS){
+        keyAction.pause(10)
+    }
+    keySequence.forEach((value) => keyAction.up(value))
 
-    return this.performActions([{
-        type: 'key',
-        id: 'keyboard',
-        actions: [...keyDownActions, ...keyUpActions]
-    }]).then(() => this.releaseActions())
+    // pass true to skip release of keys as they are already released
+    return keyAction.perform(true)
 }

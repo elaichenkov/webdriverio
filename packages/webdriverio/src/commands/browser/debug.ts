@@ -1,6 +1,8 @@
 import { serializeError } from 'serialize-error'
 import WDIORepl from '@wdio/repl'
 
+import { environment } from '../../environment.js'
+
 /**
  *
  * This command helps you to debug your integration tests. It stops the running browser and gives
@@ -19,10 +21,10 @@ import WDIORepl from '@wdio/repl'
  *
  * <example>
     :debug.js
-    it('should demonstrate the debug command', () => {
-        $('#input').setValue('FOO')
-        browser.debug() // jumping into the browser and change value of #input to 'BAR'
-        const value = $('#input').getValue()
+    it('should demonstrate the debug command', async () => {
+        await $('#input').setValue('FOO')
+        await browser.debug() // jumping into the browser and change value of #input to 'BAR'
+        const value = await $('#input').getValue()
         console.log(value) // outputs: "BAR"
     })
  * </example>
@@ -31,18 +33,18 @@ import WDIORepl from '@wdio/repl'
  * @type utility
  *
  */
-export default function debug(
+export function debug(
     this: WebdriverIO.Browser,
     commandTimeout = 5000
-) {
+): Promise<void | unknown> {
     const repl = new WDIORepl()
     const { introMessage } = WDIORepl
+    const process = globalThis.process as NodeJS.Process
 
     /**
      * run repl in standalone mode
      */
-    if (!process.env.WDIO_WORKER || typeof process.send !== 'function') {
-        // eslint-disable-next-line
+    if (!environment.value.variables.WDIO_WORKER_ID || typeof process.send !== 'function') {
         console.log(WDIORepl.introMessage)
         const context = {
             browser: this,
@@ -59,7 +61,7 @@ export default function debug(
     process._debugProcess(process.pid)
 
     /**
-     * initialise repl in testrunner
+     * initialize repl in testrunner
      */
     process.send({
         origin: 'debugger',
@@ -68,7 +70,7 @@ export default function debug(
     })
 
     let commandResolve = /* istanbul ignore next */ () => { }
-    process.on('message', (m) => {
+    process.on('message', (m: { name: string, origin: string, content: { cmd: string } }) => {
         if (m.origin !== 'debugger') {
             return
         }
@@ -80,7 +82,7 @@ export default function debug(
 
         /* istanbul ignore if */
         if (m.name === 'eval') {
-            repl.eval(m.content.cmd, global, undefined, (err: Error | null, result: any) => {
+            repl.eval(m.content.cmd, global, undefined, (err: Error | null, result: unknown) => {
                 if (typeof process.send !== 'function') {
                     return
                 }

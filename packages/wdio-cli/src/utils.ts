@@ -1,21 +1,29 @@
-import fs from 'fs-extra'
-import ejs from 'ejs'
-import path from 'path'
-import inquirer from 'inquirer'
-import logger from '@wdio/logger'
-import readDir from 'recursive-readdir'
-import { SevereServiceError } from 'webdriverio'
-import { execSync } from 'child_process'
-import { promisify } from 'util'
-import type { Options, Capabilities, Services } from '@wdio/types'
 
-import { ReplCommandArguments, Questionnair, SupportedPackage, OnCompleteResult, ParsedAnswers } from './types'
-import { EXCLUSIVE_SERVICES, ANDROID_CONFIG, IOS_CONFIG, QUESTIONNAIRE } from './constants'
+import pickBy from 'lodash.pickby'
+import logger from '@wdio/logger'
+import { SevereServiceError } from 'webdriverio'
+import { ConfigParser } from '@wdio/config/node'
+import { CAPABILITY_KEYS } from '@wdio/protocols'
+import type { Capabilities, Services } from '@wdio/types'
+
+import {
+    ANDROID_CONFIG,
+    IOS_CONFIG,
+} from './constants.js'
+import type {
+    OnCompleteResult,
+    ReplCommandArguments,
+} from './types.js'
 
 const log = logger('@wdio/cli:utils')
 
-const TEMPLATE_ROOT_DIR = path.join(__dirname, 'templates', 'exampleFiles')
-const renderFile = promisify(ejs.renderFile) as (path: string, data: Record<string, any>) => Promise<string>
+export class HookError extends SevereServiceError {
+    public origin: string
+    constructor(message: string, origin: string) {
+        super(message)
+        this.origin = origin
+    }
+}
 
 /**
  * run service launch sequences
@@ -23,7 +31,7 @@ const renderFile = promisify(ejs.renderFile) as (path: string, data: Record<stri
 export async function runServiceHook(
     launcher: Services.ServiceInstance[],
     hookName: keyof Services.HookFunctions,
-    ...args: any[]
+    ...args: unknown[]
 ) {
     const start = Date.now()
     return Promise.all(launcher.map(async (service: Services.ServiceInstance) => {
@@ -31,11 +39,11 @@ export async function runServiceHook(
             if (typeof service[hookName] === 'function') {
                 await (service[hookName] as Function)(...args)
             }
-        } catch (e) {
-            const message = `A service failed in the '${hookName}' hook\n${e.stack}\n\n`
+        } catch (err) {
+            const message = `A service failed in the '${hookName}' hook\n${(err as Error).stack}\n\n`
 
-            if (e instanceof SevereServiceError) {
-                return { status: 'rejected', reason: message }
+            if (err instanceof SevereServiceError || (err as Error).name === 'SevereServiceError') {
+                return { status: 'rejected', reason: message, origin: hookName }
             }
 
             log.error(`${message}Continue...`)
@@ -47,7 +55,7 @@ export async function runServiceHook(
 
         const rejectedHooks = results.filter(p => p && p.status === 'rejected')
         if (rejectedHooks.length) {
-            return Promise.reject(new Error(`\n${rejectedHooks.map(p => p && p.reason).join()}\n\nStopping runner...`))
+            return Promise.reject(new HookError(`\n${rejectedHooks.map(p => p && p.reason).join()}\n\nStopping runner...`, hookName))
         }
     })
 }
@@ -55,21 +63,26 @@ export async function runServiceHook(
 /**
  * Run hook in service launcher
  * @param {Array|Function} hook - can be array of functions or single function
- * @param {Object} config
- * @param {Object} capabilities
+ * @param {object} config
+ * @param {object} capabilities
  */
-export async function runLauncherHook(hook: Function | Function[], ...args: any[]) {
-    const catchFn = (e: Error) => log.error(`Error in hook: ${e.stack}`)
-
+export async function runLauncherHook(hook: Function | Function[], ...args: unknown[]) {
     if (typeof hook === 'function') {
         hook = [hook]
+    }
+
+    const catchFn = (e: Error) => {
+        log.error(`Error in hook: ${e.stack}`)
+        if (e instanceof SevereServiceError) {
+            throw new HookError(e.message, (hook as Function[])[0].name)
+        }
     }
 
     return Promise.all(hook.map((hook) => {
         try {
             return hook(...args)
-        } catch (e) {
-            return catchFn(e)
+        } catch (err) {
+            return catchFn(err as Error)
         }
     })).catch(catchFn)
 }
@@ -84,8 +97,8 @@ export async function runLauncherHook(hook: Function | Function[], ...args: any[
  */
 export async function runOnCompleteHook(
     onCompleteHook: Function | Function[],
-    config: Options.Testrunner,
-    capabilities: Capabilities.RemoteCapabilities,
+    config: WebdriverIO.Config,
+    capabilities: Capabilities.TestrunnerCapabilities,
     exitCode: number,
     results: OnCompleteResult
 ) {
@@ -97,8 +110,11 @@ export async function runOnCompleteHook(
         try {
             await hook(exitCode, config, capabilities, results)
             return 0
-        } catch (e) {
-            log.error(`Error in onCompleteHook: ${e.stack}`)
+        } catch (err) {
+            log.error(`Error in onCompleteHook: ${(err as Error).stack}`)
+            if (err instanceof SevereServiceError) {
+                throw new HookError(err.message, 'onComplete')
+            }
             return 1
         }
     }))
@@ -107,13 +123,14 @@ export async function runOnCompleteHook(
 /**
  * get runner identification by caps
  */
-export function getRunnerName (caps: Capabilities.DesiredCapabilities = {}) {
+export function getRunnerName(caps: WebdriverIO.Capabilities = {}) {
     let runner =
         caps.browserName ||
-        caps.appPackage ||
-        caps.appWaitActivity ||
-        caps.app ||
-        caps.platformName
+        caps.platformName ||
+        caps['appium:platformName'] ||
+        caps['appium:appPackage'] ||
+        caps['appium:appWaitActivity'] ||
+        caps['appium:app']
 
     // MultiRemote
     if (!runner) {
@@ -123,25 +140,7 @@ export function getRunnerName (caps: Capabilities.DesiredCapabilities = {}) {
     return runner
 }
 
-function buildNewConfigArray (str: string, type: string, change: string) {
-    const newStr = str
-        .split(`${type}s: `)[1]
-        .replace(/'/g, '')
-
-    let newArray = newStr.match(/(\w*)/gmi)?.filter(e => !!e).concat([change]) || []
-
-    return str
-        .replace('// ', '')
-        .replace(
-            new RegExp(`(${type}s: )((.*\\s*)*)`), `$1[${newArray.map(e => `'${e}'`)}]`
-        )
-}
-
-function buildNewConfigString (str: string, type: string, change: string) {
-    return str.replace(new RegExp(`(${type}: )('\\w*')`), `$1'${change}'`)
-}
-
-export function findInConfig (config: string, type: string) {
+export function findInConfig(config: string, type: string) {
     let regexStr = `[\\/\\/]*[\\s]*${type}s: [\\s]*\\[([\\s]*['|"]\\w*['|"],*)*[\\s]*\\]`
 
     if (type === 'framework') {
@@ -152,94 +151,7 @@ export function findInConfig (config: string, type: string) {
     return config.match(regex)
 }
 
-export function replaceConfig (config: string, type: string, name: string) {
-    if (type === 'framework') {
-        return buildNewConfigString(config, type, name)
-    }
-
-    const match = findInConfig(config, type)
-    if (!match || match.length === 0) {
-        return
-    }
-
-    const text = match.pop() || ''
-    return config.replace(text, buildNewConfigArray(text, type, name))
-}
-
-export function addServiceDeps(names: SupportedPackage[], packages: string[], update = false) {
-    /**
-     * automatically install latest Chromedriver if `wdio-chromedriver-service`
-     * was selected for install
-     */
-    if (names.some(({ short }) => short === 'chromedriver')) {
-        packages.push('chromedriver')
-        if (update) {
-            // eslint-disable-next-line no-console
-            console.log(
-                '\n=======',
-                '\nPlease change path to / in your wdio.conf.js:',
-                "\npath: '/'",
-                '\n=======\n')
-        }
-    }
-
-    /**
-     * install Appium if it is not installed globally if `@wdio/appium-service`
-     * was selected for install
-     */
-    if (names.some(({ short }) => short === 'appium')) {
-        const result = execSync('appium --version || echo APPIUM_MISSING').toString().trim()
-        if (result === 'APPIUM_MISSING') {
-            packages.push('appium')
-        } else if (update) {
-            // eslint-disable-next-line no-console
-            console.log(
-                '\n=======',
-                '\nUsing globally installed appium', result,
-                '\nPlease add the following to your wdio.conf.js:',
-                "\nappium: { command: 'appium' }",
-                '\n=======\n')
-        }
-    }
-}
-
-/**
- * @todo add JSComments
- */
-export function convertPackageHashToObject(pkg: string, hash = '$--$'): SupportedPackage {
-    const splitHash = pkg.split(hash)
-    return {
-        package: splitHash[0],
-        short: splitHash[1]
-    }
-}
-
-export async function renderConfigurationFile (answers: ParsedAnswers) {
-    const tplPath = path.join(__dirname, 'templates/wdio.conf.tpl.ejs')
-    const filename = `wdio.conf.${answers.isUsingTypeScript ? 'ts' : 'js'}`
-    const renderedTpl = await renderFile(tplPath, { answers })
-    return fs.promises.writeFile(path.join(process.cwd(), filename), renderedTpl)
-}
-
-export const validateServiceAnswers = (answers: string[]): Boolean | string => {
-    let result: boolean | string = true
-
-    Object.entries(EXCLUSIVE_SERVICES).forEach(([name, { services, message }]) => {
-        const exists = answers.some(answer => answer.includes(name))
-
-        const hasExclusive = services.some(service =>
-            answers.some(answer => answer.includes(service))
-        )
-
-        if (exists && hasExclusive) {
-            result = `${name} cannot work together with ${services.join(', ')}\n${message}\nPlease uncheck one of them.`
-        }
-    })
-
-    return result
-}
-
-export function getCapabilities(arg: ReplCommandArguments) {
+export async function getCapabilities(arg: ReplCommandArguments) {
     const optionalCapabilites = {
         platformVersion: arg.platformVersion,
         udid: arg.udid,
@@ -261,114 +173,137 @@ export function getCapabilities(arg: ReplCommandArguments) {
         return { capabilities: { browserName: 'Chrome', ...ANDROID_CONFIG, ...optionalCapabilites } }
     } else if (/ios/.test(arg.option)) {
         return { capabilities: { browserName: 'Safari', ...IOS_CONFIG, ...optionalCapabilites } }
+    } else if (/(js|ts)$/.test(arg.option)) {
+        const config = new ConfigParser(arg.option)
+        try {
+            await config.initialize()
+        } catch (e) {
+            throw Error((e as { code: string }).code === 'MODULE_NOT_FOUND' ? `Config File not found: ${arg.option}` :
+                `Could not parse ${arg.option}, failed with error: ${(e as Error).message}`)
+        }
+        if (typeof arg.capabilities === 'undefined') {
+            throw Error('Please provide index/named property of capability to use from the capabilities array/object in wdio config file')
+        }
+        let requiredCaps = config.getCapabilities()
+        requiredCaps = (
+            // multi capabilities
+            (requiredCaps as (Capabilities.RequestedStandaloneCapabilities)[])[parseInt(arg.capabilities, 10)] ||
+            // multiremote
+            (requiredCaps as Capabilities.RequestedMultiremoteCapabilities)[arg.capabilities]?.capabilities
+        )
+        const requiredW3CCaps = pickBy(requiredCaps, (_: never, key: string) => CAPABILITY_KEYS.includes(key) || key.includes(':'))
+        if (!Object.keys(requiredW3CCaps).length) {
+            throw Error(`No capability found in given config file with the provided capability indexed/named property: ${arg.capabilities}. Please check the capability in your wdio config file.`)
+        }
+        return { capabilities: { ...(requiredW3CCaps as Capabilities.W3CCapabilities) } }
     }
     return { capabilities: { browserName: arg.option } }
 }
 
-/**
- * Check if file exists in current work directory
- * @param {string} filename to check existance for
- */
-export function hasFile (filename: string) {
-    return fs.existsSync(path.join(process.cwd(), filename))
+const cucumberTypes: Record<string, string> = {
+    paths: 'array',
+    backtrace: 'boolean',
+    dryRun: 'boolean',
+    forceExit: 'boolean',
+    failFast: 'boolean',
+    format: 'array',
+    formatOptions: 'object',
+    import: 'array',
+    language: 'string',
+    name: 'array',
+    order: 'string',
+    publish: 'boolean',
+    requireModule: 'array',
+    retry: 'number',
+    retryTagFilter: 'string',
+    strict: 'boolean',
+    tags: 'string',
+    worldParameters: 'object',
+    timeout: 'number',
+    scenarioLevelReporter: 'boolean',
+    tagsInTitle: 'boolean',
+    ignoreUndefinedDefinitions: 'boolean',
+    failAmbiguousDefinitions: 'boolean',
+    tagExpression: 'string',
+    profiles: 'array',
+    file: 'string'
 }
 
-/**
- * generate test files based on CLI answers
- */
-export async function generateTestFiles (answers: ParsedAnswers) {
-    const testFiles = answers.framework === 'cucumber'
-        ? [path.join(TEMPLATE_ROOT_DIR, 'cucumber')]
-        : [path.join(TEMPLATE_ROOT_DIR, 'mochaJasmine')]
-
-    if (answers.usePageObjects) {
-        testFiles.push(path.join(TEMPLATE_ROOT_DIR, 'pageobjects'))
-    }
-
-    const files = (await Promise.all(testFiles.map((dirPath) => readDir(
-        dirPath,
-        [(file, stats) => !stats.isDirectory() && !(file.endsWith('.ejs') || file.endsWith('.feature'))]
-    )))).reduce((cur, acc) => [...acc, ...(cur)], [])
-
-    for (const file of files) {
-        const renderedTpl = await renderFile(file, answers)
-        let destPath = (
-            file.endsWith('page.js.ejs')
-                ? `${answers.destPageObjectRootPath}/${path.basename(file)}`
-                : file.includes('step_definition')
-                    ? `${answers.stepDefinitions}`
-                    : `${answers.destSpecRootPath}/${path.basename(file)}`
-        ).replace(/\.ejs$/, '').replace(/\.js$/, answers.isUsingTypeScript ? '.ts' : '.js')
-
-        fs.ensureDirSync(path.dirname(destPath))
-        await fs.promises.writeFile(destPath, renderedTpl)
-    }
+const mochaTypes: Record<string, string> = {
+    require: 'array',
+    compilers: 'array',
+    allowUncaught: 'boolean',
+    asyncOnly: 'boolean',
+    bail: 'boolean',
+    checkLeaks: 'boolean',
+    delay: 'boolean',
+    fgrep: 'string',
+    forbidOnly: 'boolean',
+    forbidPending: 'boolean',
+    fullTrace: 'boolean',
+    global: 'array',
+    grep: 'string',
+    invert: 'boolean',
+    retries: 'number',
+    timeout: 'number',
+    ui: 'string'
 }
 
-export async function getAnswers(yes: boolean): Promise<Questionnair> {
-    return yes
-        ? QUESTIONNAIRE.reduce((answers, question) => Object.assign(
-            answers,
-            question.when && !question.when(answers)
-                /**
-                 * set nothing if question doesn't apply
-                 */
-                ? {}
-                : { [question.name]: typeof question.default !== 'undefined'
-                    /**
-                     * set default value if existing
-                     */
-                    ? typeof question.default === 'function'
-                        ? question.default(answers)
-                        : question.default
-                    : question.choices && question.choices.length
-                    /**
-                     * pick first choice, select value if it exists
-                     */
-                        ? (question.choices[0] as { value: any }).value
-                            ? (question.choices[0] as { value: any }).value
-                            : question.choices[0]
-                        : {}
-                }
-        ), {} as Questionnair)
-        : await inquirer.prompt(QUESTIONNAIRE)
+const jasmineTypes: Record<string, string> = {
+    defaultTimeoutInterval: 'number',
+    helpers: 'array',
+    requires: 'array',
+    random: 'boolean',
+    seed: 'string',
+    failFast: 'boolean',
+    failSpecWithNoExpectations: 'boolean',
+    oneFailurePerSpec: 'boolean',
+    grep: 'string',
+    invertGrep: 'boolean',
+    cleanStack: 'boolean',
+    stopOnSpecFailure: 'boolean',
+    stopSpecOnExpectationFailure: 'boolean',
+    requireModule: 'array',
 }
 
-export function getPathForFileGeneration (answers: Questionnair) {
-    const destSpecRootPath = path.join(
-        process.cwd(),
-        path.dirname(answers.specs || '').replace(/\*\*$/, ''))
+type CLIParams = { [x: string]: boolean | string | number | (string | boolean | number)[] }
 
-    const destStepRootPath = path.join(process.cwd(), path.dirname(answers.stepDefinitions || ''))
-
-    const destPageObjectRootPath = answers.usePageObjects
-        ?  path.join(
-            process.cwd(),
-            path.dirname(answers.pages || '').replace(/\*\*$/, ''))
-        : ''
-    let relativePath = (answers.generateTestFiles && answers.usePageObjects)
-        ? !(convertPackageHashToObject(answers.framework).short === 'cucumber')
-            ? path.relative(destSpecRootPath, destPageObjectRootPath)
-            : path.relative(destStepRootPath, destPageObjectRootPath)
-        : ''
-
-    /**
-    * On Windows, path.relative can return backslashes that could be interpreted as espace sequences in strings
-    */
-    if (process.platform === 'win32') {
-        relativePath = relativePath.replace(/\\/g, '/')
+export function coerceOpts (
+    types: Record<string, string>,
+    opts: CLIParams
+) {
+    for (const key in opts) {
+        if (types[key] === 'boolean' && typeof opts[key] === 'string') {
+            opts[key] = opts[key] === 'true'
+        } else if (types[key] === 'number') {
+            opts[key] = Number(opts[key])
+        } else if (types[key] === 'array') {
+            opts[key] = Array.isArray(opts[key]) ? opts[key] : [opts[key]]
+        } else if (types[key] === 'object' && typeof opts[key] === 'string') {
+            opts[key] = JSON.parse(opts[key])
+        }
     }
-
-    return {
-        destSpecRootPath : destSpecRootPath,
-        destStepRootPath : destStepRootPath,
-        destPageObjectRootPath : destPageObjectRootPath,
-        relativePath : relativePath
-    }
+    return opts
 }
 
-export function getDefaultFiles (answers: Partial<Questionnair>, filePath: string) {
-    return answers?.isUsingCompiler?.toString().includes('TypeScript')
-        ? `${filePath}.ts`
-        : `${filePath}.js`
+export function coerceOptsFor(framework: 'cucumber' | 'mocha' | 'jasmine') {
+    if (framework === 'cucumber') {
+        return coerceOpts.bind(null, cucumberTypes)
+    } else if (framework === 'mocha') {
+        return coerceOpts.bind(null, mochaTypes)
+    } else if (framework === 'jasmine') {
+        return coerceOpts.bind(null, jasmineTypes)
+    }
+
+    throw new Error(`Unsupported framework "${framework}"`)
+}
+
+enum NodeVersion {
+    'major' = 0,
+    'minor' = 1,
+    'patch' = 2
+}
+
+export function nodeVersion(type: keyof typeof NodeVersion): number {
+    return process.versions.node.split('.').map(Number)[NodeVersion[type]]
 }

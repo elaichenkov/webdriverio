@@ -1,4 +1,5 @@
 import type { SauceConnectOptions } from 'saucelabs'
+import type { Capabilities, Options } from '@wdio/types'
 
 export interface SauceServiceConfig {
     /**
@@ -10,12 +11,12 @@ export interface SauceServiceConfig {
     /**
      * Specify tunnel identifier for Sauce Connect tunnel
      */
-    tunnelIdentifier?: string
+    tunnelName?: string
 
     /**
-     * Specify tunnel identifier for Sauce Connect parent tunnel
+     * Specify tunnel owner
      */
-    parentTunnel?: string
+    tunnelOwner?: string
 
     /**
      * If true it runs Sauce Connect and opens a secure connection between a Sauce Labs virtual
@@ -27,7 +28,7 @@ export interface SauceServiceConfig {
 
     /**
      * Apply Sauce Connect options (e.g. to change port number or logFile settings). See this
-     * list for more information: https://github.com/bermi/sauce-connect-launcher#advanced-usage
+     * list for more information: https://docs.saucelabs.com/dev/cli/sauce-connect-5/run/
      *
      * @default {}
      */
@@ -40,8 +41,23 @@ export interface SauceServiceConfig {
     uploadLogs?: boolean
 
     /**
-     * Use Sauce Connect as a Selenium Relay. See more [here](https://wiki.saucelabs.com/display/DOCS/Using+the+Selenium+Relay+with+Sauce+Connect+Proxy).
-     * @deprecated
+     * Dynamically control the name of the job
      */
-    scRelay?: boolean
+    setJobName?: (
+        config: Options.Testrunner,
+        capabilities: Capabilities.ResolvedTestrunnerCapabilities,
+        suiteTitle: string
+    ) => string
+}
+
+export interface Provider {
+    matcher(): boolean;
+    ci: CI;
+}
+
+export interface CI {
+    repo: string;
+    refName: string;
+    sha: string;
+    user: string;
 }

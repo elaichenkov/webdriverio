@@ -1,13 +1,23 @@
-import RunnableStats from './runnable'
-import { Argument } from '../types'
+import { types as nodeUtilTypes } from 'node:util'
+import type { AssertionError } from 'node:assert'
+
+import { diffWordsWithSpace } from 'diff'
+import objectInspect from 'object-inspect'
+
+import RunnableStats from './runnable.js'
+import { pad, color, colorLines } from '../utils.js'
+import type { Argument } from '../types.js'
+
+const maxStringLength = 2048
 
 export interface Test {
-    type: 'test:start' | 'test:pass' | 'test:fail' | 'test:retry' | 'test:pending' | 'test:end'
+    type: 'test:start' | 'test:pass' | 'test:fail' | 'test:retry' | 'test:pending' | 'test:end' | 'test:skip'
     title: string
     parent: string
     fullTitle: string
     pending: boolean
     file?: string
+    body?: string
     duration?: number
     cid: string
     specs: string[]
@@ -17,11 +27,12 @@ export interface Test {
     errors?: Error[]
     retries?: number
     argument?: string | Argument
+    state?: string
 }
 
 interface Output {
     command: string
-    params: any
+    params: unknown[]
     method: 'PUT' | 'POST' | 'GET' | 'DELETE'
     endpoint: string
     body: {}
@@ -46,6 +57,7 @@ export default class TestStats extends RunnableStats {
     output: Output[]
     argument?: string | Argument
     retries?: number
+    parent: string
     /**
      * initial test state is pending
      * the state can change to the following: passed, skipped, failed
@@ -54,6 +66,7 @@ export default class TestStats extends RunnableStats {
     pendingReason?: string
     errors?: Error[]
     error?: Error
+    body?: string
 
     constructor(test: Test) {
         super('test')
@@ -64,6 +77,9 @@ export default class TestStats extends RunnableStats {
         this.output = []
         this.argument = test.argument
         this.retries = test.retries
+        this.parent = test.parent
+        // Mocha only
+        this.body = test.body
 
         /**
          * initial test state is pending
@@ -85,10 +101,63 @@ export default class TestStats extends RunnableStats {
     fail(errors?: Error[]) {
         this.complete()
         this.state = 'failed'
-        this.errors = errors
 
-        if (errors && errors.length) {
-            this.error = errors[0]
+        /**
+         * Iterates through all errors to check if they're a type of 'AssertionError',
+         * and formats it if so. Otherwise, just leaves error as is
+         */
+        const formattedErrors = errors?.map((err: Error) => (
+            /**
+             * only format if error object has either an "expected" or "actual" property set
+             */
+            (((err as AssertionError).expected || (err as AssertionError).actual) && !nodeUtilTypes.isProxy((err as AssertionError).actual)) &&
+            /**
+             * and if they aren't already formated, e.g. in Jasmine
+             */
+            (err.message && !err.message.includes('Expected: ') && !err.message.includes('Received: '))
+                ? this._stringifyDiffObjs(err as AssertionError)
+                : err
+        ))
+
+        this.errors = formattedErrors
+        if (formattedErrors && formattedErrors.length) {
+            this.error = formattedErrors[0]
         }
+    }
+
+    private _stringifyDiffObjs (err: AssertionError) {
+        const inspectOpts = { maxStringLength }
+        const expected = objectInspect(err.expected, inspectOpts)
+        const actual = objectInspect(err.actual, inspectOpts)
+
+        let msg = diffWordsWithSpace(actual, expected)
+            .map((str) => (
+                str.added
+                    ? colorLines('diff added inline', str.value)
+                    : str.removed
+                        ? colorLines('diff removed inline', str.value)
+                        : str.value
+            ))
+            .join('')
+
+        // linenos
+        const lines = msg.split('\n')
+        if (lines.length > 4) {
+            const width = String(lines.length).length
+            msg = lines
+                .map(function(str: string, i: number) {
+                    return pad(String(++i), width) + ' |' + ' ' + str
+                })
+                .join('\n')
+        }
+
+        // legend
+        msg = `\n${color('diff removed inline', 'actual')} ${color('diff added inline', 'expected')}\n\n${msg}\n`
+
+        // indent
+        msg = msg.replace(/^/gm, '      ')
+        const newError = new Error(err.message + msg)
+        newError.stack = err.stack
+        return newError
     }
 }

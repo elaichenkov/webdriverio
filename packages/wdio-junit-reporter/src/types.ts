@@ -1,29 +1,52 @@
-import { Reporters } from '@wdio/types'
+import type { Reporters } from '@wdio/types'
+import type { SuiteStats } from '@wdio/reporter'
+
+type TestSuiteNameFunction = (options: TestSuiteNameFormatOptions) => string
+
+interface ClassNameFormatOptions {
+    /**
+     * Configured package name
+     */
+    packageName?: string
+    /**
+     * Name of the current cucumber feature
+     */
+    activeFeatureName?: string
+    /**
+     * Context of the current suite
+     */
+    suite?: SuiteStats
+}
+
+interface TestSuiteNameFormatOptions {
+    name?: string
+    suite: SuiteStats
+}
 
 export interface JUnitReporterOptions extends Reporters.Options {
     /**
-     * Define the xml files created after the test execution.
+     * Gives the ability to provide custom regex for formatting test suite name (e.g. in output xml ) or
+     * override the generated name of a test suite.
      *
-     * > Note: `options.capabilities` is your capabilities object for that runner, so specifying
-     * `${options.capabilities}` in your string will return [Object object]. You must specify which
-     * properties of capabilities you want in your filename.
      *
-     * @example
-     * outputFileFormat: function (options) {
-     *     return 'mycustomfilename.xml'
-     * }
-     * @default
-     * outputFileFormat: function (options) {
-     *     return `wdio-${this.cid}-${opts.name}-reporter.log`
+     * @example regex
+     * /[^a-z0-9]+/
+     *
+     * @example suiteName
+     * suiteNameFormat: function (options) {
+     *     return `${options.suite.title}`
      * }
      */
-    outputFileFormat?: (opts: any) => string
+    suiteNameFormat?: RegExp | TestSuiteNameFunction
     /**
-     * Gives the ability to provide custom regex for formatting test suite name (e.g. in output xml ).
+     * Give the ability to override the generated classname of a test case.
      *
-     * @default /[^a-z0-9]+/
+     * @default
+     * classNameFormat: function (options) {
+     *     return ``${options._packageName}.${options.suite.fullTitle.replace(/\s/g, '_')}``
+     * }
      */
-    suiteNameFormat?: RegExp
+    classNameFormat?: (options: ClassNameFormatOptions) => string
     /**
      * Adds a file attribute to each testcase. This config is primarily for CircleCI. This setting
      * provides richer details but may break on other CI platforms.
@@ -90,4 +113,27 @@ export interface JUnitReporterOptions extends Reporters.Options {
      * ```
      */
     errorOptions?: Record<string, string>
+
+    /**
+     * Optional parameter, set this parameter to true in order to attach console logs from the test in the reporter.
+     * @default false
+     *
+     * @example
+     *
+     * ```js
+     * // wdio.conf.js
+     * module.exports = {
+     *     // ...
+     *     reporters: [
+     *         'dot',
+     *         ['junit', {
+     *             outputDir: './',
+     *             addWorkerLogs: true
+     *         }]
+     *     ],
+     *     // ...
+     * };
+     * ```
+     */
+    addWorkerLogs?: boolean
 }

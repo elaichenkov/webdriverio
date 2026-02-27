@@ -1,39 +1,68 @@
-import { writeFile, deleteFile } from '../src/utils'
-import SharedStoreLauncher from '../src/launcher'
-import StoreServerType from '../src/server'
-const StoreServer: typeof StoreServerType = require('../src/server').default
+import path from 'node:path'
+import { describe, expect, vi, it } from 'vitest'
 
-const { stopServer } = StoreServer
+import { setPort } from '../src/client.js'
+import SharedStoreLauncher from '../src/launcher.js'
 
-jest.mock('../src/server', () => ({
-    default: {
-        startServer: async () => ({ port: 3000 }),
-        stopServer: jest.fn(),
-    }
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
+
+vi.mock('../src/server', () => ({
+    startServer: () => Promise.resolve({ port: 3000 })
 }))
-jest.mock('../src/utils', () => ({
-    writeFile: jest.fn(),
-    deleteFile: jest.fn(),
-    getPidPath: (pid: number) => pid,
+
+vi.mock('../src/client', () => ({
+    setPort: vi.fn()
 }))
 
 const storeLauncher = new SharedStoreLauncher()
 
 describe('SharedStoreService', () => {
-    it('onPrepare', async () => {
-        await storeLauncher.onPrepare()
-        expect(writeFile).toBeCalledWith(process.pid, '3000')
+    describe('should update capabilities correctly', () => {
+        it('using standard caps', async () => {
+            const capabilities = [{ browserName: 'chrome' }]
+            await storeLauncher.onPrepare(null as never, capabilities)
+            expect(capabilities).toMatchSnapshot()
+            expect(setPort).toBeCalledWith(3000)
+        })
+
+        it('using w3c caps', async () => {
+            const capabilities = [{ alwaysMatch: { browserName: 'chrome' }, firstMatch: [] }]
+            await storeLauncher.onPrepare(null as never, capabilities)
+            expect(capabilities).toMatchSnapshot()
+            expect(setPort).toBeCalledWith(3000)
+        })
+
+        it('using multiremote caps', async () => {
+            const capabilities = {
+                browserA: { capabilities: { browserName: 'chrome' } },
+                browserB: { capabilities: { browserName: 'firefox' } }
+            }
+            await storeLauncher.onPrepare(null as never, capabilities)
+            expect(capabilities).toMatchSnapshot()
+            expect(setPort).toBeCalledTimes(3)
+            expect(setPort).toBeCalledWith(3000)
+        })
+
+        it('using parallel multiremote caps', async () => {
+            const capabilities = [{
+                browserA: { capabilities: { browserName: 'chrome' } },
+                browserB: { capabilities: { browserName: 'firefox' } }
+            }]
+            await storeLauncher.onPrepare(null as never, capabilities)
+            expect(capabilities).toMatchSnapshot()
+            expect(setPort).toBeCalledWith(3000)
+        })
     })
 
-    it('onComplete', async () => {
-        await storeLauncher.onComplete()
-        expect(stopServer).toBeCalled()
-        expect(deleteFile).toBeCalledWith(process.pid)
-    })
+    describe('should close the server in onComplete hook', () => {
+        it('using parallel caps', async () => {
+            const app: any = {
+                server: { close: vi.fn((cb) => process.nextTick(cb)) }
+            }
+            storeLauncher['_app'] = app
+            await storeLauncher.onComplete()
 
-    afterEach(() => {
-        (writeFile as jest.Mock).mockClear()
-        ;(deleteFile as jest.Mock).mockClear()
-        ;(stopServer as jest.Mock).mockClear()
+            expect(app.server.close).toBeCalledTimes(1)
+        })
     })
 })

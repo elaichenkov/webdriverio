@@ -1,0 +1,5 @@
+{
+  "name": "mocha-smoke-tests-cjs",
+  "type": "commonjs",
+  "private": true
+}

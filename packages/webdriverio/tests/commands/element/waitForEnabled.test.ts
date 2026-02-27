@@ -1,15 +1,17 @@
-// @ts-ignore mocked (original defined in webdriver package)
-import gotMock from 'got'
-import { remote } from '../../../src'
+import path from 'node:path'
+import { expect, describe, it, vi, beforeAll } from 'vitest'
 
-const got = gotMock as any as jest.Mock
+import { remote } from '../../../src/index.js'
+
+vi.mock('fetch')
+vi.mock('@wdio/logger', () => import(path.join(process.cwd(), '__mocks__', '@wdio/logger')))
 
 describe('waitForEnabled', () => {
     const timeout = 1000
-    let browser: WebdriverIO.BrowserObject
+    let browser: WebdriverIO.Browser
 
     beforeAll(async () => {
-        got.mockClear()
+        vi.mocked(fetch).mockClear()
 
         browser = await remote({
             baseUrl: 'http://foobar.com',
@@ -19,117 +21,131 @@ describe('waitForEnabled', () => {
         })
     })
 
-    test('should wait for the element to exist', async () => {
+    it('should wait for the element to exist', async () => {
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : null,
-            waitUntil : jest.fn(),
+            waitUntil : vi.fn(),
             options : { waitforInterval: 5, waitforTimeout: timeout }
-        }
+        } as unknown as WebdriverIO.Element
 
         await elem.waitForEnabled({ timeout })
         expect(elem.waitForExist).toBeCalled()
     })
 
-    test('element should already exist on the page', async () => {
+    it('element should already exist on the page', async () => {
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
-            waitUntil : jest.fn(),
-            isEnabled : jest.fn(() => Promise.resolve()),
+            waitUntil : vi.fn(),
+            isEnabled : vi.fn(() => Promise.resolve()),
             options : { waitforInterval: 5, waitforTimeout: timeout }
-        }
+        } as unknown as WebdriverIO.Element
 
         await elem.waitForEnabled({ timeout })
         expect(elem.waitForExist).not.toBeCalled()
     })
 
-    test('should call waitUntil', async () => {
-        const cb = jest.fn()
+    it('should call waitUntil', async () => {
+        const cb = vi.fn()
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             selector : '#foo',
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
-            waitUntil : jest.fn(((cb))),
-            isEnabled : jest.fn(() => Promise.resolve()),
+            waitUntil : vi.fn(((cb))),
+            isEnabled : vi.fn(() => Promise.resolve()),
             options : { waitforInterval: 5, waitforTimeout: timeout }
-        }
+        } as unknown as WebdriverIO.Element
 
         await elem.waitForEnabled({ timeout })
 
         expect(cb).toBeCalled()
-        expect(elem.waitUntil.mock.calls).toMatchSnapshot()
+        expect(vi.mocked(elem.waitUntil).mock.calls).toMatchSnapshot()
     })
 
-    test('should call isEnabled and return true', async () => {
+    it('should call isEnabled and return true', async () => {
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             selector : '#foo',
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
             waitUntil : tmpElem.waitUntil,
-            isEnabled : jest.fn(() => true),
+            isEnabled : vi.fn(() => true),
             options : { waitforInterval: 5, waitforTimeout: timeout }
-        }
+        } as unknown as WebdriverIO.Element
 
         const result = await elem.waitForEnabled({ timeout })
         expect(result).toBe(true)
     })
 
-    test('should call isEnabled and return false', async () => {
+    it('should call isEnabled and return false', async () => {
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             selector : '#foo',
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
             waitUntil : tmpElem.waitUntil,
-            isEnabled : jest.fn(() => false),
+            isEnabled : vi.fn(() => false),
             options : { waitforInterval: 5, waitforTimeout: timeout }
-        }
+        } as unknown as WebdriverIO.Element
 
         try {
             await elem.waitForEnabled({ timeout })
-        } catch (e) {
-            expect(e.message).toBe(`element ("#foo") still not enabled after ${timeout}ms`)
+        } catch (err: any) {
+            expect(err.message).toBe(`element ("#foo") still not enabled after ${timeout}ms`)
         }
     })
 
-    test('should do reverse', async () => {
-        const cb = jest.fn()
+    it('should do reverse', async () => {
+        const cb = vi.fn()
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             selector : '#foo',
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
-            waitUntil : jest.fn(((cb))),
-            isEnabled : jest.fn(() => Promise.resolve()),
+            waitUntil : vi.fn(((cb))),
+            isEnabled : vi.fn(() => Promise.resolve()),
             options : { waitforInterval: 50, waitforTimeout: 500 }
-        }
+        } as unknown as WebdriverIO.Element
 
         await elem.waitForEnabled({ reverse: true })
-        expect(elem.waitUntil.mock.calls).toMatchSnapshot()
+        expect(vi.mocked(elem.waitUntil).mock.calls).toMatchSnapshot()
     })
 
-    test('should call isEnabled and return false with custom error', async () => {
+    it('should call isEnabled and return false with custom error', async () => {
         const tmpElem = await browser.$('#foo')
         const elem = {
+            on: vi.fn(),
+            off: vi.fn(),
             selector : '#foo',
             waitForEnabled : tmpElem.waitForEnabled,
-            waitForExist : jest.fn(),
+            waitForExist : vi.fn(),
             elementId : 123,
             waitUntil : tmpElem.waitUntil,
-            isEnabled : jest.fn(() => false),
+            isEnabled : vi.fn(() => false),
             options : { waitforTimeout : 500 },
-        }
+        } as unknown as WebdriverIO.Element
 
         try {
             await elem.waitForEnabled({
@@ -137,8 +153,8 @@ describe('waitForEnabled', () => {
                 reverse: false,
                 timeoutMsg: 'Element foo never enabled'
             })
-        } catch (e) {
-            expect(e.message).toBe('Element foo never enabled')
+        } catch (err: any) {
+            expect(err.message).toBe('Element foo never enabled')
         }
     })
 })

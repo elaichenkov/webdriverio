@@ -1,64 +1,45 @@
-import ConfigParser from '../../src/lib/ConfigParser'
-import MockedModules from './MockedModules'
-import MockPathService, { FilePathsAndContents, MockSystemFolderPath } from './MockPathService'
+import ConfigParser from '../../src/node/ConfigParser.js'
+import type { FilePathsAndContents, MockSystemFolderPath } from './MockPathService.js'
+import MockPathService from './MockPathService.js'
 
 export default class ConfigParserBuilder {
-    private f : MockPathService;
-    private m : MockedModules;
+    #args: any
+    #configPath: string
+    #f : MockPathService
 
-    public constructor(baseDir: string, files: FilePathsAndContents = [], modules:[string, any][] = []) {
-        this.f = MockPathService.inWorkingDirectoryWithFiles({ cwd: baseDir, files })
-        this.m = MockedModules.withNoModules()
+    public constructor(baseDir: string, configPath: string, args: any, files: FilePathsAndContents = []) {
+        this.#args = args
+        this.#configPath = configPath
+        this.#f = MockPathService.inWorkingDirectoryWithFiles({ cwd: baseDir, files })
         this.withBaseDir(baseDir)
         this.withFiles(files)
-        this.withModules(modules)
     }
 
-    static withBaseDir(baseDir: MockSystemFolderPath) : ConfigParserBuilder {
-        return new ConfigParserBuilder(baseDir)
+    static withBaseDir(baseDir: MockSystemFolderPath, configPath: string, args: any = {}) : ConfigParserBuilder {
+        return new ConfigParserBuilder(baseDir, configPath, args)
     }
 
     withBaseDir(baseDir: MockSystemFolderPath):ConfigParserBuilder {
-        this.f.withCwd(baseDir)
+        this.#f.withCwd(baseDir)
         return this
     }
 
     withFiles(files : FilePathsAndContents) :ConfigParserBuilder {
-        this.f.withFiles(files)
-        return this
-    }
-
-    withNoModules():ConfigParserBuilder {
-        this.m.resetModules()
-        return this
-    }
-
-    withModules(modulesAndValuesList: [string, any][]):ConfigParserBuilder {
-        this.m.withModules(modulesAndValuesList)
-        return this
-    }
-
-    withTsNodeModule(registerMock = jest.fn()) {
-        this.m.withTsNodeModule(registerMock)
-        return this
-    }
-
-    withBabelModule(registerMock = jest.fn()) {
-        this.m.withBabelModule(registerMock)
+        this.#f.withFiles(files)
         return this
     }
 
     getMocks() {
         return {
-            finder: this.f,
-            modules: this.m
+            finder: this.#f
         }
     }
 
     build(): ConfigParser {
         return new ConfigParser(
-            this.f,
-            this.m
+            this.#configPath,
+            this.#args,
+            this.#f
         )
     }
 }

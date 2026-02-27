@@ -1,11 +1,11 @@
 ---
 title: Shadow DOM Support & reusable component objects
-author: John Robinson
-authorURL: https://www.github.com/jrobinson01
-authorImageURL: https://avatars0.githubusercontent.com/u/1584296?s=460&v=4
+authors: robinson
 ---
 
 Shadow DOM is one of the key browser features that make up web components. Web components are a really great way to build reusable elements, and are able to scale all the way up to complete web applications. Style encapsulation, the feature that gives shadow DOM it's power, has been a bit of a pain when it comes to E2E or UI testing. Things just got a little easier though, as WebdriverIO v5.5.0 introduced built-in support for shadow DOM via two new commands, [`shadow$`](https://webdriver.io/docs/api/element/shadow$.html) and [`shadow$$`](https://webdriver.io/docs/api/element/shadow$$.html). Let's dig into what they're all about.
+
+<!-- truncate -->
 
 ## History
 
@@ -174,7 +174,7 @@ This component object can now be used in tests for any page or section of your a
 
 
 ## Future
-Currently the [WebDriver protocol](https://w3c.github.io/webdriver/) does not provide native support for shadow DOM, but there has been [progress](https://github.com/w3c/webdriver/pull/1320) made for it. Once the spec is finalized, WebdriverIO will implement the spec. There's a decent chance that the `shadow` commands will change under the hood, but I'm pretty confident that they're usage will be the same as it is today, and that test code that uses them will need little to no refactoring.
+Currently, the [WebDriver](https://w3c.github.io/webdriver/) protocol does not provide native support for shadow DOM, but there has been [progress](https://github.com/w3c/webdriver/pull/1320) made for it. Once the spec is finalized, WebdriverIO will implement the spec. There's a decent chance that the `shadow` commands will change under the hood, but I'm pretty confident that they're usage will be the same as it is today, and that test code that uses them will need little to no refactoring.
 
 ## Browser Support
 IE11-Edge: Shadow DOM is not supported in IE or Edge, but can be polyfilled. The shadow commands work great with the polyfills.

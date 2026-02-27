@@ -1,5 +1,6 @@
-import { ELEMENT_KEY } from '../../constants'
-import { getBrowserObject } from '../../utils'
+import { ELEMENT_KEY } from 'webdriver'
+
+import { getBrowserObject } from '@wdio/utils'
 
 const getWebElement = (el: WebdriverIO.Element) => ({
     [ELEMENT_KEY]: el.elementId, // w3c compatible
@@ -12,10 +13,10 @@ const getWebElement = (el: WebdriverIO.Element) => ({
  *
  * <example>
     :isEqual.js
-    it('should detect if an element is clickable', () => {
-        const el = $('#el')
-        const sameEl = $('#el')
-        const anotherEl = $('#anotherEl')
+    it('should detect if an element is clickable', async () => {
+        const el = await $('#el')
+        const sameEl = await $('#el')
+        const anotherEl = await $('#anotherEl')
 
         el.isEqual(sameEl) // outputs: true
 
@@ -28,7 +29,7 @@ const getWebElement = (el: WebdriverIO.Element) => ({
  * @return  {Boolean}   true if elements are equal
  *
  */
-export default async function isEqual (
+export async function isEqual (
     this: WebdriverIO.Element,
     el: WebdriverIO.Element
 ) {
@@ -36,8 +37,16 @@ export default async function isEqual (
 
     // mobile native
     if (browser.isMobile) {
-        const context = await browser.getContext()
-        if (context?.toLowerCase().includes('native')) {
+        /**
+         * some Appium platforms don't support the `getContext` method, in that case
+         * we can't determine if we are in a native context or not, so we return undefined
+         */
+        const context = await browser.getContext().catch(() => undefined)
+        const contextId = typeof context === 'string'
+            ? context
+            : context?.id
+
+        if (contextId && contextId.toLowerCase().includes('native')) {
             return this.elementId === el.elementId
         }
     }
@@ -47,9 +56,9 @@ export default async function isEqual (
     try {
         result = await browser.execute(
             /* istanbul ignore next */
-            (el1: WebdriverIO.Element, el2: WebdriverIO.Element) => el1 === el2,
+            function (el1: WebdriverIO.Element, el2: WebdriverIO.Element) { return el1 === el2 },
             getWebElement(this), getWebElement(el))
-    } catch (err) {
+    } catch {
         result = false
     }
 

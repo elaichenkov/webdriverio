@@ -1,4 +1,4 @@
-import { getElementFromResponse } from '../../utils'
+import { getElementFromResponse } from '../../utils/index.js'
 
 /**
  *
@@ -15,11 +15,11 @@ import { getElementFromResponse } from '../../utils'
         <option value="someValue5">seis</option>
     </select>
     :selectByVisibleText.js
-    it('demonstrate the selectByVisibleText command', () => {
-        const selectBox = $('#selectbox');
-        console.log(selectBox.getText('option:checked')); // returns "uno"
-        selectBox.selectByVisibleText('cuatro');
-        console.log(selectBox.getText('option:checked')); // returns "cuatro"
+    it('demonstrate the selectByVisibleText command', async () => {
+        const selectBox = await $('#selectbox');
+        console.log(await selectBox.getText('option:checked')); // returns "uno"
+        await selectBox.selectByVisibleText('cuatro');
+        console.log(await selectBox.getText('option:checked')); // returns "cuatro"
     })
  * </example>
  *
@@ -29,7 +29,7 @@ import { getElementFromResponse } from '../../utils'
  * @type action
  *
  */
-export default async function selectByVisibleText (
+export async function selectByVisibleText (
     this: WebdriverIO.Element,
     text: string | number
 ) {
@@ -60,11 +60,10 @@ export default async function selectByVisibleText (
         `./optgroup/option${spaceFormat}`,
     ]
 
-    const optionElement = await this.findElementFromElement(this.elementId, 'xpath', selections.join('|'))
-
-    if (optionElement && (optionElement as any).error === 'no such element') {
-        throw new Error(`Option with text "${text}" not found.`)
-    }
+    const optionElement = await this.$(selections.join('|'))
+    await optionElement.waitForExist({
+        timeoutMsg: `Option with text "${text}" not found.`
+    })
 
     /**
     * select option

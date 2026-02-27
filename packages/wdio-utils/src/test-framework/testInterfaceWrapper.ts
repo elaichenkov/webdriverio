@@ -1,13 +1,13 @@
 /**
  * used to wrap mocha, jasmine test frameworks functions (`it`, `beforeEach` and other)
  * with WebdriverIO before/after Test/Hook hooks.
- * Entrypoint is `runTestInFiberContext`, other functions are exported for testing purposes.
+ * Entrypoint is `wrapGlobalTestMethod`, other functions are exported for testing purposes.
  *
  * NOTE: not used by cucumber test framework. `testFnWrapper` is called directly there
  */
 
-import { filterSpecArgs } from '../utils'
-import { testFnWrapper } from './testFnWrapper'
+import { filterSpecArgs } from '../utils.js'
+import { testFnWrapper } from './testFnWrapper.js'
 
 import type {
     HookFnArgs,
@@ -15,13 +15,12 @@ import type {
     BeforeHookParam,
     AfterHookParam,
     SpecArguments
-} from './types'
+} from './types.js'
 
 const MOCHA_COMMANDS: ['skip', 'only'] = ['skip', 'only']
 
 /**
- * runs a hook within fibers context (if function name is not async)
- * it also executes before/after hook
+ * runs a hook and execute before/after hook
  *
  * @param  {Function} hookFn        function that was passed to the framework hook
  * @param  {Function} origFn        original framework hook function
@@ -29,8 +28,8 @@ const MOCHA_COMMANDS: ['skip', 'only'] = ['skip', 'only']
  * @param  {Function} beforeFnArgs  function that returns args for `beforeFn`
  * @param  {Function} afterFn       after hook
  * @param  {Function} afterArgsFn   function that returns args for `afterFn`
- * @param  {String}   cid           cid
- * @param  {Number}   repeatTest    number of retries if hook fails
+ * @param  {string}   cid           cid
+ * @param  {number}   repeatTest    number of retries if hook fails
  * @return {Function}               wrapped framework hook function
  */
 export const runHook = function (
@@ -42,9 +41,10 @@ export const runHook = function (
     afterFn: Function | Function[],
     afterFnArgs: HookFnArgs<unknown>,
     cid: string,
-    repeatTest: number
+    repeatTest: number,
+    timeout: number
 ) {
-    return origFn(function (
+    const wrappedHook = function (
         this: unknown,
         ...hookFnArgs: [
             string,
@@ -52,7 +52,8 @@ export const runHook = function (
             BeforeHookParam<unknown>,
             AfterHookParam<unknown>,
             string,
-            number
+            number,
+            string
         ]
     ) {
         return testFnWrapper.call(
@@ -71,13 +72,20 @@ export const runHook = function (
                 afterFnArgs
             },
             cid,
-            repeatTest
+            repeatTest,
+            origFn.name,
+            timeout
         )
-    })
+    }
+    /**
+     * make sure Mocha grabs the correct hook function body
+     */
+    wrappedHook.toString = () => hookFn.toString()
+    return origFn(wrappedHook, timeout)
 }
 
 /**
- * runs a spec function (test function) within the fibers context
+ * runs a spec function (test function)
  *
  * @param  {string}   specTitle     test description
  * @param  {Function} specFn        test function that got passed in from the user
@@ -86,8 +94,8 @@ export const runHook = function (
  * @param  {Function} beforeFnArgs  function that returns args for `beforeFn`
  * @param  {Function} afterFn       after hook
  * @param  {Function} afterFnArgs   function that returns args for `afterFn`
- * @param  {String}   cid           cid
- * @param  {Number}   repeatTest    number of retries if test fails
+ * @param  {string}   cid           cid
+ * @param  {number}   repeatTest    number of retries if test fails
  * @return {Function}               wrapped test function
  */
 export const runSpec = function (
@@ -100,9 +108,10 @@ export const runSpec = function (
     afterFn: Function | Function[],
     afterFnArgs: HookFnArgs<unknown>,
     cid: string,
-    repeatTest: number
+    repeatTest: number,
+    timeout: number
 ) {
-    return origFn(specTitle, function (
+    const wrappedFn = function (
         this: unknown,
         ...specFnArgs: [
             string,
@@ -129,9 +138,16 @@ export const runSpec = function (
                 afterFnArgs
             },
             cid,
-            repeatTest
+            repeatTest,
+            undefined,
+            timeout
         )
-    })
+    }
+    /**
+     * make sure Mocha grabs the correct test function body
+     */
+    wrappedFn.toString = () => specFn.toString()
+    return origFn(specTitle, wrappedFn, timeout)
 }
 
 /**
@@ -139,12 +155,12 @@ export const runSpec = function (
  *
  * @param  {Function} origFn               original framework function
  * @param  {Boolean}  isSpec               whether or not origFn is a spec
- * @param  {String[]} testInterfaceFnNames command that runs specs, e.g. `it`, `it.only` or `fit`
+ * @param  {string[]} testInterfaceFnNames command that runs specs, e.g. `it`, `it.only` or `fit`
  * @param  {Function} beforeFn             before hook
  * @param  {Function} beforeFnArgs         function that returns args for `beforeFn`
  * @param  {Function} afterFn              after hook
  * @param  {Function} afterArgsFn          function that returns args for `afterFn`
- * @param  {String}   cid                  cid
+ * @param  {string}   cid                  cid
  * @return {Function}                      wrapped test/hook function
  */
 export const wrapTestFunction = function (
@@ -163,7 +179,28 @@ export const wrapTestFunction = function (
          * [title, fn], [title], [fn]
          * [title, fn, retryCnt], [title, retryCnt], [fn, retryCnt]
          */
-        let retryCnt = typeof specArguments[specArguments.length - 1] === 'number' ? specArguments.pop() : 0
+        let retryCnt = typeof specArguments[specArguments.length - 1] === 'number'
+            ? specArguments.pop() :
+            0
+
+        /**
+         * Jasmine uses a timeout value as last parameter, in this case the arguments
+         * should be [title, fn, timeout, retryCnt]
+         */
+        // @ts-expect-error
+        let timeout = globalThis.jasmine?.DEFAULT_TIMEOUT_INTERVAL
+        // @ts-expect-error
+        if (globalThis.jasmine) {
+            // if we have [title, fn, timeout, retryCnt]
+            if (typeof specArguments[specArguments.length - 1] === 'number') {
+                timeout = specArguments.pop() as number
+            // if we have [title, fn, timeout]
+            } else {
+                timeout = retryCnt as number
+                retryCnt = 0
+            }
+        }
+
         const specFn = typeof specArguments[0] === 'function' ? specArguments.shift()
             : (typeof specArguments[1] === 'function' ? specArguments[1] : undefined)
         const specTitle = specArguments[0]
@@ -179,7 +216,8 @@ export const wrapTestFunction = function (
                     afterFn,
                     afterArgsFn,
                     cid,
-                    retryCnt as number
+                    retryCnt as number,
+                    timeout
                 )
             }
 
@@ -189,12 +227,22 @@ export const wrapTestFunction = function (
             return origFn(specTitle)
         }
 
-        return runHook(specFn as Function, origFn, beforeFn, beforeArgsFn, afterFn, afterArgsFn, cid, retryCnt as number)
+        return runHook(
+            specFn as Function,
+            origFn,
+            beforeFn,
+            beforeArgsFn,
+            afterFn,
+            afterArgsFn,
+            cid,
+            retryCnt as number,
+            timeout
+        )
     }
 }
 
 /**
- * Wraps global test function like `it` so that commands can run synchronouse
+ * Wraps global test function like `it`.
  *
  * The scope parameter is used in the qunit framework since all functions are bound to global.QUnit instead of global
  *
@@ -203,11 +251,11 @@ export const wrapTestFunction = function (
  * @param  {Function} beforeFnArgs  function that returns args for `beforeFn`
  * @param  {Function} afterFn       after hook
  * @param  {Function} afterArgsFn   function that returns args for `afterFn`
- * @param  {String}   fnName        test interface command to wrap, e.g. `beforeEach`
- * @param  {String}   cid           cid
+ * @param  {string}   fnName        test interface command to wrap, e.g. `beforeEach`
+ * @param  {string}   cid           cid
  * @param  {Object}   scope         the scope to run command from, defaults to global
  */
-export const runTestInFiberContext = function (
+export const wrapGlobalTestMethod = function (
     this: unknown,
     isSpec: boolean,
     beforeFn: Function | Function[],
@@ -216,8 +264,11 @@ export const runTestInFiberContext = function (
     afterArgsFn: HookFnArgs<unknown>,
     fnName: string,
     cid: string,
-    scope = global) {
+    scope = globalThis
+) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const origFn = (scope as any)[fnName];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (scope as any)[fnName] = wrapTestFunction(
         origFn,
         isSpec,
@@ -227,6 +278,7 @@ export const runTestInFiberContext = function (
         afterArgsFn,
         cid
     )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addMochaCommands(origFn, (scope as any)[fnName])
 }
 

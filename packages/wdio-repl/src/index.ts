@@ -7,7 +7,7 @@
  * interface that will allow you to try out certain commands, find elements and test actions on
  * them.
  *
- * [![WebdriverIO REPL](https://webdriver.io/images/repl.gif)](https://webdriver.io/images/repl.gif)
+ * [![WebdriverIO REPL](https://webdriver.io/img/repl.gif)](https://webdriver.io/img/repl.gif)
  *
  * If you run the WDIO testrunner make sure you increase the timeout property of the test framework
  * you are using (e.g. Mocha or Jasmine) in order to prevent test termination due to a test timeout.
@@ -30,12 +30,10 @@
  *
  */
 
-import vm from 'vm'
-import repl from 'repl'
+import vm from 'node:vm'
+import repl from 'node:repl'
 
-import { runFnInFiberContext, hasWdioSyncSupport } from '@wdio/utils'
-
-import { STATIC_RETURNS, INTRO_MESSAGE, DEFAULT_CONFIG } from './constants'
+import { STATIC_RETURNS, INTRO_MESSAGE, DEFAULT_CONFIG } from './constants.js'
 
 export interface ReplConfig {
     commandTimeout: number
@@ -45,7 +43,7 @@ export interface ReplConfig {
     useColor: boolean
 }
 
-export type ReplCallback = (err: Error | null, result: any) => void
+export type ReplCallback = (err: Error | null, result: unknown) => void
 
 export default class WDIORepl {
     static introMessage = INTRO_MESSAGE
@@ -73,12 +71,6 @@ export default class WDIORepl {
         vm.createContext(context)
         this._isCommandRunning = true
 
-        /* istanbul ignore if */
-        if (hasWdioSyncSupport) {
-            return runFnInFiberContext(
-                () => this._runCmd(cmd, context, callback))()
-        }
-
         return this._runCmd(cmd, context, callback)
     }
 
@@ -86,13 +78,13 @@ export default class WDIORepl {
         try {
             const result = vm.runInContext(cmd, context)
             return this._handleResult(result, callback)
-        } catch (e) {
+        } catch (e: unknown) {
             this._isCommandRunning = false
-            return callback(e, undefined)
+            return callback(e as Error, undefined)
         }
     }
 
-    private _handleResult (result: any, callback: ReplCallback) {
+    private _handleResult (result: Promise<unknown>, callback: ReplCallback) {
         if (!result || typeof result.then !== 'function') {
             this._isCommandRunning = false
             return callback(null, result)
@@ -108,7 +100,7 @@ export default class WDIORepl {
             this._config.commandTimeout
         )
 
-        result.then((res: any) => {
+        result.then((res: unknown) => {
             /**
              * don't do anything if timeout was called
              */
@@ -137,7 +129,7 @@ export default class WDIORepl {
 
     start (context?: vm.Context) {
         if (this._replServer) {
-            throw new Error('a repl was already initialised')
+            throw new Error('a repl was already initialized')
         }
 
         if (context) {

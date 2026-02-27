@@ -1,82 +1,208 @@
-import { Capabilities } from '@wdio/types'
+import { getBrowserObject } from '@wdio/utils'
 
-import { ELEMENT_KEY } from '../../constants'
-import { getBrowserObject, hasElementId } from '../../utils'
-import isElementDisplayedScript from '../../scripts/isElementDisplayed'
-
-const noW3CEndpoint = ['microsoftedge', 'safari', 'chrome', 'safari technology preview']
+import { hasElementId } from '../../utils/index.js'
+import isElementDisplayedLegacyScript from '../../scripts/isElementDisplayed.js'
+import isElementInViewportScript from '../../scripts/isElementInViewport.js'
 
 /**
  *
- * Return true if the selected DOM-element is displayed.
+ * Return true if the selected DOM-element is displayed (even when the element is outside the viewport). It is using
+ * the [`checkVisibility`](https://developer.mozilla.org/en-US/docs/Web/API/Element/checkVisibility#visibilityproperty)
+ * method provided by the browser to determine if an element is being displayed or not. Since WebdriverIO acts as a
+ * real user, the default values for the `contentVisibilityAuto`, `opacityProperty`, and `visibilityProperty` flags
+ * are set to `true` to default to a more strict behavior. This means that the command will check if the element is
+ * visible due to the value of its `content-visibility`, `opacity`, and `visibility` properties.
+ *
+ * If you want to also verify that the element is also within the viewport, provide the `withinViewport` flag to the command.
+ *
+ * :::info
+ *
+ * As opposed to other element commands WebdriverIO will not wait for the element
+ * to exist to execute this command.
+ *
+ * :::
+ *
+ * WebdriverIO, when conducting browser tests, utilizes a [custom script](https://github.com/webdriverio/webdriverio/blob/59d349ca847950354d02b9e548f60cc50e7871f0/packages/webdriverio/src/scripts/isElementDisplayed.ts)
+ * specifically designed to assess the visibility of elements. This script is key in determining whether an
+ * element is displayed on the page. Conversely, for native mobile testing scenarios with Appium, WebdriverIO
+ * defers to the [`isElementDisplayed`](https://appium.io/docs/en/2.1/reference/interfaces/appium_types.ExternalDriver/#elementdisplayed)
+ * command provided by Appium. This command evaluates the visibility of elements using criteria established by the
+ * underlying Appium driver, ensuring accurate and driver-specific assessments for mobile applications.
  *
  * <example>
     :index.html
-    <div id="notDisplayed" style="display: none"></div>
-    <div id="notVisible" style="visibility: hidden"></div>
-    <div id="notInViewport" style="position:absolute; left: 9999999"></div>
-    <div id="zeroOpacity" style="opacity: 0"></div>
+    <div id="noSize"></div>
+    <div id="noSizeWithContent">Hello World!</div>
+    <div id="notDisplayed" style="width: 10px; height: 10px; display: none"></div>
+    <div id="notVisible" style="width: 10px; height: 10px; visibility: hidden"></div>
+    <div id="zeroOpacity" style="width: 10px; height: 10px; opacity: 0"></div>
+    <div id="notInViewport" style="width: 10px; height: 10px; position:fixed; top: 999999; left: 999999"></div>
     :isDisplayed.js
-    it('should detect if an element is displayed', () => {
-        let elem = $('#notDisplayed');
-        let isDisplayed = elem.isDisplayed();
+    it('should detect if an element is displayed', async () => {
+        elem = await $('#notExisting');
+        isDisplayed = await elem.isDisplayed();
         console.log(isDisplayed); // outputs: false
 
-        elem = $('#notVisible');
-
-        isDisplayed = elem.isDisplayed();
+        let elem = await $('#noSize');
+        let isDisplayed = await elem.isDisplayed();
         console.log(isDisplayed); // outputs: false
 
-        elem = $('#notExisting');
-        isDisplayed = elem.isDisplayed();
-        console.log(isDisplayed); // outputs: false
-
-        elem = $('#notInViewport');
-        isDisplayed = elem.isDisplayed();
+        let elem = await $('#noSizeWithContent');
+        let isDisplayed = await elem.isDisplayed();
         console.log(isDisplayed); // outputs: true
 
-        elem = $('#zeroOpacity');
-        isDisplayed = elem.isDisplayed();
+        let elem = await $('#notDisplayed');
+        let isDisplayed = await elem.isDisplayed();
+        console.log(isDisplayed); // outputs: false
+
+        elem = await $('#notVisible');
+        isDisplayed = await elem.isDisplayed();
+        console.log(isDisplayed); // outputs: false
+
+        elem = await $('#zeroOpacity');
+        isDisplayed = await elem.isDisplayed();
+        console.log(isDisplayed); // outputs: false
+
+        elem = await $('#notInViewport');
+        isDisplayed = await elem.isDisplayed();
         console.log(isDisplayed); // outputs: true
+    });
+    isDisplayedWithinViewport.js
+    it('should detect if an element is visible within the viewport', async () => {
+        let isDisplayedInViewport = await $('#notDisplayed').isDisplayed({ withinViewport: true });
+        console.log(isDisplayedInViewport); // outputs: false
+
+        isDisplayedInViewport = await $('#notVisible').isDisplayed({ withinViewport: true });
+        console.log(isDisplayedInViewport); // outputs: false
+
+        isDisplayedInViewport = await $('#notExisting').isDisplayed({ withinViewport: true });
+        console.log(isDisplayedInViewport); // outputs: false
+
+        isDisplayedInViewport = await $('#notInViewport').isDisplayed({ withinViewport: true });
+        console.log(isDisplayedInViewport); // outputs: false
+
+        isDisplayedInViewport = await $('#zeroOpacity').isDisplayed({ withinViewport: true });
+        console.log(isDisplayedInViewport); // outputs: false
     });
  * </example>
  *
  * @alias element.isDisplayed
+ * @param {Boolean} [withinViewport=false] `true` to check if the element is within the viewport. `false` by default.
+ * @param {Boolean} [contentVisibilityAuto=true] `true` to check if the element content-visibility property has (or inherits) the value auto, and it is currently skipping its rendering. `true` by default.
+ * @param {Boolean} [opacityProperty=true] `true` to check if the element opacity property has (or inherits) a value of 0. `true` by default.
+ * @param {Boolean} [visibilityProperty=true] `true` to check if the element is invisible due to the value of its visibility property. `true` by default.
  * @return {Boolean} true if element is displayed
  * @uses protocol/elements, protocol/elementIdDisplayed
  * @type state
- *
  */
-export default async function isDisplayed (this: WebdriverIO.Element) {
+
+export async function isDisplayed (
+    this: WebdriverIO.Element,
+    commandParams: IsDisplayedParams = DEFAULT_PARAMS
+) {
     const browser = getBrowserObject(this)
 
     if (!await hasElementId(this)) {
         return false
     }
 
-    /*
-     * https://www.w3.org/TR/webdriver/#element-displayedness
-     * Certain drivers have decided to remove the endpoint as the spec
-     * no longer dictates it. In those instances, we pass the element through a script
-     * that was provided by Brian Burg, maintainer of Safaridriver.
-     *
-     * 6th of May 2019 APPIUM response (mykola-mokhnach) :
-     * - Appium didn't enable W3C mode for mobile drivers.
-     * - Safari and Chrome work in jsonwp mode and Appium just rewrites W3C requests from upstream to jsonwp if needed
+    /**
+     * For mobile sessions with Appium we continue to use the elementDisplayed command
+     * as we can't run JS in native apps
      */
-    const useAtom = (
-        browser.isDevTools ||
-        (
-            browser.isW3C &&
-            !browser.isMobile &&
-            noW3CEndpoint.includes((browser.capabilities as Capabilities.Capabilities).browserName?.toLowerCase()!)
-        )
-    )
+    if (browser.isMobile && (browser.isNativeContext || browser.isWindowsApp || browser.isMacApp)) {
+        /**
+         * there is no support yet for checking if an element is displayed within the
+         * viewport for native apps. We can only check if it's displayed at all.
+         */
+        if (commandParams?.withinViewport) {
+            throw new Error(
+                'Cannot determine element visibility within viewport for native mobile apps ' +
+                'as it is not feasible to determine full vertical and horizontal application bounds. ' +
+                'In most cases a basic visibility check should suffice.'
+            )
+        }
 
-    return useAtom
-        ? await browser.execute(isElementDisplayedScript, {
-            [ELEMENT_KEY]: this.elementId, // w3c compatible
-            ELEMENT: this.elementId // jsonwp compatible
-        } as any as HTMLElement) :
-        await this.isElementDisplayed(this.elementId)
+        return await this.isElementDisplayed(this.elementId)
+    }
+
+    let hadToFallback = false
+    const [isDisplayed, displayProperty] = await Promise.all([
+        browser.execute(function checkVisibility (elem, params) {
+            if (typeof elem.checkVisibility === 'function') {
+                return elem.checkVisibility(params)
+            }
+            // Fallback to legacy script if checkVisibility is not available
+            return null
+        }, this as unknown as HTMLElement, {
+            ...DEFAULT_PARAMS,
+            ...commandParams
+        }).then((result) => {
+            if (result === null) {
+                hadToFallback = true
+                return browser.execute(isElementDisplayedLegacyScript, this as unknown as HTMLElement)
+            }
+            return result
+        }),
+        browser.execute(function (elem) {
+            try {
+                const style = window.getComputedStyle(elem)
+
+                return { value: style?.display ?? '' }
+            } catch {
+                if (typeof elem.isConnected === 'boolean' && !elem.isConnected) {
+                    throw new Error('stale element reference: element is not attached to the page document')
+                }
+
+                return { value: '' }
+            }
+        }, this as unknown as HTMLElement)
+    ])
+
+    /**
+     * If the element is displayed with `display: contents` we need to recheck
+     * the visibility as the element itself is not visible but its children are
+     * (if there are any). Hence, we run the legacy script for it.
+     */
+    const hasDisplayContentsCSSProperty = displayProperty.value === 'contents'
+    const shouldRecheckContentVisibility = !hadToFallback && hasDisplayContentsCSSProperty
+    const finalResponse = shouldRecheckContentVisibility
+        ? await browser.execute(isElementDisplayedLegacyScript, this as unknown as HTMLElement).catch(() => false)
+        : isDisplayed
+
+    if (finalResponse && commandParams?.withinViewport) {
+        return browser.execute(isElementInViewportScript, this as unknown as HTMLElement)
+    }
+
+    return finalResponse
+}
+
+const DEFAULT_PARAMS: IsDisplayedParams = {
+    withinViewport: false,
+    contentVisibilityAuto: true,
+    opacityProperty: true,
+    visibilityProperty: true
+}
+
+interface IsDisplayedParams {
+    /**
+     * `true` to check if the element is within the viewport. false by default.
+     */
+    withinViewport?: boolean
+    /**
+     * `true` to check if the element content-visibility property has (or inherits) the value auto,
+     * and it is currently skipping its rendering. `true` by default.
+     * @default true
+     */
+    contentVisibilityAuto?: boolean
+    /**
+     * `true` to check if the element opacity property has (or inherits) a value of 0. `true` by default.
+     * @default true
+     */
+    opacityProperty?: boolean
+    /**
+     * `true` to check if the element is invisible due to the value of its visibility property. `true` by default.
+     * @default true
+     */
+    visibilityProperty?: boolean
 }
